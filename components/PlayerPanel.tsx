@@ -8,6 +8,7 @@ interface Props {
   isActive: boolean;
   isNextStart: boolean;
   onFarmClick: (tileIdx: number) => void;
+  onFenceClick?: (tileIdx: number, side: 't'|'b'|'l'|'r') => void;
 }
 
 const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
@@ -16,7 +17,7 @@ const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
   </span>
 );
 
-const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmClick }) => {
+const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmClick, onFenceClick }) => {
   const allocation = calculateAllocation(player);
   const score = calculateScore(player);
 
@@ -81,6 +82,7 @@ const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmCli
                 idx={i} 
                 content={allocation.distribution[i]} 
                 onClick={() => onFarmClick(i)}
+                onFenceClick={onFenceClick ? (side) => onFenceClick(i, side) : undefined}
             />
           ))}
         </div>

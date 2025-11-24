@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS } from './constants';
@@ -12,14 +11,21 @@ const App: React.FC = () => {
     logs, 
     clickAction, 
     cancelMode, 
-    handleFarmClick, 
+    handleFarmClick,
+    handleFenceClick, 
     confirmModeAction,
     switchTool,
+    toggleSeed,
     buyMajor,
     renovate
   } = useGameLogic();
 
   const activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
+
+  // Helper to find action name for simple mode
+  const getActionDetails = (actId: string) => {
+    return BASE_ACTIONS.find(a => a.id === actId) || gameState.roundCards.find(a => a.id === actId);
+  };
 
   return (
     <div className="flex flex-col items-center p-2 max-w-[1600px] mx-auto pb-20">
@@ -94,6 +100,7 @@ const App: React.FC = () => {
                  isActive={activePlayer.id === p.id} 
                  isNextStart={gameState.nextStartPlayer === p.id}
                  onFarmClick={(tileIdx) => handleFarmClick(p.id, tileIdx)}
+                 onFenceClick={(tile, side) => handleFenceClick(p.id, tile, side)}
               />
            ))}
         </div>
@@ -111,9 +118,26 @@ const App: React.FC = () => {
       {/* Action Toolbar */}
       {activePlayer.type === 'human' && activePlayer.tempMode && (
           <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 p-4 rounded-lg shadow-2xl border border-slate-600 flex flex-col gap-3 items-center z-50 animate-bounce-in min-w-[300px]">
-              <div className="flex items-center gap-2">
-                 <span className="font-bold text-sky-400">Action: {activePlayer.tempMode.mode}</span>
-              </div>
+              
+              {activePlayer.tempMode.mode === 'simple' && (
+                  <div className="text-white mb-2 text-center">
+                     {(() => {
+                         const act = getActionDetails(activePlayer.tempMode!.actId);
+                         return (
+                             <>
+                               <div className="font-bold text-lg mb-1">{act?.name}</div>
+                               <div className="text-sm text-gray-400">{act?.desc}</div>
+                             </>
+                         );
+                     })()}
+                  </div>
+              )}
+              
+              {activePlayer.tempMode.mode !== 'simple' && (
+                <div className="flex items-center gap-2">
+                    <span className="font-bold text-sky-400">Action: {activePlayer.tempMode.mode}</span>
+                </div>
+              )}
 
               {/* Build Menu Tools */}
               {activePlayer.tempMode.mode === 'build_menu' && (
@@ -129,6 +153,25 @@ const App: React.FC = () => {
                          className={`px-3 py-1 rounded text-sm font-bold ${activePlayer.tempMode.currentTool === 'stable' ? 'bg-orange-600 text-white' : 'bg-slate-600 text-gray-400 hover:bg-slate-500'}`}
                       >
                          🏚️ Build Stable
+                      </button>
+                  </div>
+              )}
+
+              {/* Sowing Tools */}
+              {(activePlayer.tempMode.mode === 'sow' || activePlayer.tempMode.mode === 'plow_sow') && (
+                  <div className="flex gap-2 bg-slate-700 p-1 rounded items-center">
+                      <span className="text-xs text-gray-400 mr-1">Select Seed:</span>
+                      <button 
+                         onClick={() => toggleSeed('grain')}
+                         className={`px-3 py-1 rounded text-sm font-bold ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'bg-slate-600 text-gray-400 hover:bg-slate-500'}`}
+                      >
+                         🌾 Grain ({activePlayer.res.grain})
+                      </button>
+                      <button 
+                         onClick={() => toggleSeed('veg')}
+                         className={`px-3 py-1 rounded text-sm font-bold ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'bg-slate-600 text-gray-400 hover:bg-slate-500'}`}
+                      >
+                         🥕 Veg ({activePlayer.res.veg})
                       </button>
                   </div>
               )}

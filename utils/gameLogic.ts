@@ -141,27 +141,56 @@ export const calculateAllocation = (p: Player): Allocation => {
 };
 
 export const validateFenceRules = (p: Player): boolean => {
+    // 1. Degree Check: No "Loose Ends" allowed.
+    // In a closed graph (Eulerian or collection of cycles), every vertex must have degree >= 2.
+    // Specifically, a vertex with Degree 1 is a dead end. Degree 3 (T-junction) is allowed for shared walls.
     const degrees: { [key: string]: number } = {};
-    const addDeg = (x: number, y: number) => { const k = `${x},${y}`; degrees[k] = (degrees[k] || 0) + 1; };
+    const addDeg = (x: number, y: number) => { 
+        const k = `${x},${y}`; 
+        degrees[k] = (degrees[k] || 0) + 1; 
+    };
+
     p.fences.forEach(key => {
         const [idxStr, side] = key.split('-');
         const idx = parseInt(idxStr);
-        const r = Math.floor(idx / 5), c = idx % 5;
+        const r = Math.floor(idx / 5);
+        const c = idx % 5;
+        // Map edges to vertices (x=col, y=row)
+        // top: (c, r) -> (c+1, r)
+        // bottom: (c, r+1) -> (c+1, r+1)
+        // left: (c, r) -> (c, r+1)
+        // right: (c+1, r) -> (c+1, r+1)
         if (side === 't') { addDeg(c, r); addDeg(c + 1, r); }
         if (side === 'b') { addDeg(c, r + 1); addDeg(c + 1, r + 1); }
         if (side === 'l') { addDeg(c, r); addDeg(c, r + 1); }
         if (side === 'r') { addDeg(c + 1, r); addDeg(c + 1, r + 1); }
     });
+
     for (const k in degrees) {
-        if (degrees[k] % 2 !== 0) return false;
+        // If any vertex has exactly 1 fence connected, it's a loose end.
+        // Degree 0 is impossible (we iterate existing fences).
+        if (degrees[k] === 1) return false; 
     }
+
+    // 2. Content Check: Fences cannot enclose Rooms(1) or Fields(2)
+    // analyzeFarmLayout only returns pastures that are fully enclosed.
     const layout = analyzeFarmLayout(p);
+    
+    // Check if any fence exists that is NOT part of a valid pasture
+    // We can count total fences used in pastures vs total fences placed
+    // But simplified check: ensure no pasture contains invalid types.
     for (const pasture of layout.pastures) {
         for (const tileIdx of pasture.tiles) {
             const type = p.farm[tileIdx];
-            if (type !== 0 && type !== 5) return false;
+            if (type !== 0 && type !== 5) return false; // Can only fence Empty(0) or Stable(5)
         }
     }
+    
+    // Ensure all placed fences are actually part of a pasture loop?
+    // If degree check passes (no loose ends), then fences form cycles.
+    // If those cycles contain Rooms/Fields, the check above catches it.
+    // If those cycles contain Empty/Stable, they are valid pastures.
+    
     return true;
 };
 

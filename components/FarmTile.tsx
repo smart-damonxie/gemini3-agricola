@@ -6,16 +6,23 @@ interface Props {
   idx: number;
   content: { icon: string; type: string }[];
   onClick: () => void;
+  onFenceClick?: (side: 't'|'b'|'l'|'r') => void;
 }
 
-const FarmTile: React.FC<Props> = ({ p, idx, content, onClick }) => {
+const FarmTile: React.FC<Props> = ({ p, idx, content, onClick, onFenceClick }) => {
   const type = p.farm[idx];
   const isRoom = type === 1;
   const isField = type === 2;
   const isStable = type === 5;
   
   // Fence detection
-  const hasFence = (side: string) => p.fences.has(`${idx}-${side}`);
+  const hasFence = (side: string) => {
+      if (side === 't') return p.fences.has(`${idx}-t`);
+      if (side === 'l') return p.fences.has(`${idx}-l`);
+      if (side === 'r') return (idx % 5 === 4) ? p.fences.has(`${idx}-r`) : p.fences.has(`${idx + 1}-l`);
+      if (side === 'b') return (idx >= 10) ? p.fences.has(`${idx}-b`) : p.fences.has(`${idx + 5}-t`);
+      return false;
+  };
 
   let bgClass = 'bg-green-600/80'; // Empty
   if (isRoom) {
@@ -23,6 +30,9 @@ const FarmTile: React.FC<Props> = ({ p, idx, content, onClick }) => {
   } else if (isField) {
      bgClass = 'bg-[url("https://www.transparenttextures.com/patterns/dirt.png")] bg-yellow-900/60 border-yellow-900/80 shadow-inner';
   }
+
+  // Fence interaction overlay classes
+  const fenceZoneBase = "absolute z-40 cursor-pointer hover:bg-white/40 transition-colors";
 
   return (
     <div 
@@ -68,11 +78,23 @@ const FarmTile: React.FC<Props> = ({ p, idx, content, onClick }) => {
          );
       })}
 
-      {/* Fences */}
-      {hasFence('t') && <div className="absolute top-[-2px] left-[-2px] right-[-2px] h-2 bg-fence z-30 shadow-sm rounded-sm" />}
-      {hasFence('b') && <div className="absolute bottom-[-2px] left-[-2px] right-[-2px] h-2 bg-fence z-30 shadow-sm rounded-sm" />}
-      {hasFence('l') && <div className="absolute left-[-2px] top-[-2px] bottom-[-2px] w-2 bg-fence z-30 shadow-sm rounded-sm" />}
-      {hasFence('r') && <div className="absolute right-[-2px] top-[-2px] bottom-[-2px] w-2 bg-fence z-30 shadow-sm rounded-sm" />}
+      {/* Render Fences - Positioned in the 4px grid gaps */}
+      {/* We extend them by 4px on ends to ensure corners meet perfectly without gaps */}
+      {hasFence('t') && <div className="absolute top-[-4px] left-[-4px] right-[-4px] h-1 bg-fence z-30 pointer-events-none" />}
+      {hasFence('b') && <div className="absolute bottom-[-4px] left-[-4px] right-[-4px] h-1 bg-fence z-30 pointer-events-none" />}
+      {hasFence('l') && <div className="absolute left-[-4px] top-[-4px] bottom-[-4px] w-1 bg-fence z-30 pointer-events-none" />}
+      {hasFence('r') && <div className="absolute right-[-4px] top-[-4px] bottom-[-4px] w-1 bg-fence z-30 pointer-events-none" />}
+
+      {/* Fence Click Zones (Only if onFenceClick is provided) */}
+      {/* Zones cover the gap + a small strip of the tile for easier clicking */}
+      {onFenceClick && (
+          <>
+            <div className={`${fenceZoneBase} top-[-4px] left-0 right-0 h-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('t'); }} title="Build Top Fence" />
+            <div className={`${fenceZoneBase} bottom-[-4px] left-0 right-0 h-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('b'); }} title="Build Bottom Fence" />
+            <div className={`${fenceZoneBase} top-0 bottom-0 left-[-4px] w-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('l'); }} title="Build Left Fence" />
+            <div className={`${fenceZoneBase} top-0 bottom-0 right-[-4px] w-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('r'); }} title="Build Right Fence" />
+          </>
+      )}
     </div>
   );
 };
