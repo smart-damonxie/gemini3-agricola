@@ -1,0 +1,5 @@
+{
+  "name": "Agricola Farm Game",
+  "description": "A strategic farming board game where players grow crops, raise animals, and build their farm. Features AI opponents and resource management.",
+  "requestFramePermissions": []
+}
