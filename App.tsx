@@ -16,7 +16,7 @@ const App: React.FC = () => {
     confirmModeAction,
     switchTool,
     toggleSeed,
-    buyMajor,
+    selectMajor,
     renovate
   } = useGameLogic();
 
@@ -189,19 +189,30 @@ const App: React.FC = () => {
               {/* Major Selection Area */}
               {(activePlayer.tempMode.mode === 'major' || activePlayer.tempMode.mode === 'reno_major') && (
                   <div className="flex flex-col gap-1 w-full max-h-[200px] overflow-y-auto bg-slate-900 p-2 rounded border border-slate-700">
-                      <span className="text-xs text-gray-400 font-bold uppercase">Buy Improvement:</span>
-                      {gameState.majors.map(m => (
-                          <button 
-                             key={m.id}
-                             onClick={() => buyMajor(m.id)}
-                             className="text-left text-xs bg-orange-900/50 hover:bg-orange-800 p-2 rounded border border-orange-700 flex justify-between group"
-                          >
-                             <span className="font-bold text-orange-200">{m.name}</span>
-                             <span className="text-gray-400 group-hover:text-white">
-                                {JSON.stringify(m.cost).replace(/["{}]/g, '').replace(/:/g, '')}
-                             </span>
-                          </button>
-                      ))}
+                      <span className="text-xs text-gray-400 font-bold uppercase mb-1">Select Improvement:</span>
+                      {gameState.majors.map(m => {
+                          const isSelected = activePlayer.tempMode?.selectedMajorId === m.id;
+                          return (
+                              <button 
+                                 key={m.id}
+                                 onClick={() => selectMajor(m.id)}
+                                 className={`
+                                     text-left text-xs p-2 rounded border flex justify-between group transition-all
+                                     ${isSelected 
+                                        ? 'bg-yellow-900/50 border-yellow-400 ring-2 ring-yellow-500/50' 
+                                        : 'bg-orange-900/50 border-orange-700 hover:bg-orange-800'
+                                     }
+                                 `}
+                              >
+                                 <span className={`font-bold ${isSelected ? 'text-yellow-200' : 'text-orange-200'}`}>
+                                    {isSelected && '✓ '} {m.name}
+                                 </span>
+                                 <span className="text-gray-400 group-hover:text-white">
+                                    {JSON.stringify(m.cost).replace(/["{}]/g, '').replace(/:/g, '')}
+                                 </span>
+                              </button>
+                          );
+                      })}
                       {gameState.majors.length === 0 && <span className="text-xs text-gray-500 italic">No majors available</span>}
                   </div>
               )}

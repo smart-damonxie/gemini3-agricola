@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES } from '../constants';
@@ -522,7 +523,6 @@ export const useGameLogic = () => {
              // Simple Mode Logic (Execute here)
              if (mode === 'simple' && act) {
                  // Apply Logic directly to P here before committing
-                 // We don't validate resources for taking resources, assuming always valid if slot available
                  const newP = { ...p, res: {...p.res}, animals: {...p.animals} };
                  if (act.type === 'res') {
                     const amt = act.cur || act.amount || 0;
@@ -545,34 +545,78 @@ export const useGameLogic = () => {
                  addLog(`${p.name} took ${act.name}`, p.color);
                  updatePlayer(pId, () => newP);
              } 
-             // Complex Validations
+             // Complex Validations & Executions
              else {
-                 if (mode === 'build_menu' && countType(p, 1) + countType(p, 5) <= countType(oldP, 1) + countType(oldP, 5)) {
-                     isValid = false; errMsg = "Build something!";
+                 // Strict validation for Fence, Build, Plow: Content Check + Action Check
+                 if (mode === 'build_menu') {
+                     if (countType(p, 1) + countType(p, 5) <= countType(oldP, 1) + countType(oldP, 5)) {
+                         isValid = false; errMsg = "Must build at least one room or stable!";
+                     }
+                     if (isValid && !validateFenceRules(p)) {
+                         isValid = false; errMsg = "Cannot build Rooms/Fields inside existing fenced pastures!";
+                     }
                  }
-                 if (mode === 'plow' && countType(p, 2) <= countType(oldP, 2)) {
-                     isValid = false; errMsg = "Plow a field!";
+                 if (mode === 'plow' || mode === 'plow_sow') {
+                     if (countType(p, 2) <= countType(oldP, 2)) {
+                         isValid = false; errMsg = "Must plow at least one field!";
+                     }
+                     if (isValid && !validateFenceRules(p)) {
+                         isValid = false; errMsg = "Cannot plow fields inside existing fenced pastures!";
+                     }
                  }
                  if (mode === 'fence' || mode === 'reno_fence') {
                      if (p.fences.size <= oldP.fences.length) { 
-                          if(mode === 'fence') { isValid = false; errMsg = "Build at least one fence!"; }
+                          if(mode === 'fence') { isValid = false; errMsg = "Must build at least one fence!"; }
                      }
                      if (isValid && !validateFenceRules(p)) {
                          isValid = false; 
-                         errMsg = "Fences must form closed loops (no loose ends)!";
+                         errMsg = "Fences must form closed loops and only enclose Empty/Stables!";
                      }
                  }
-                 // Validate Sow: Must sow at least one crop
                  if (mode === 'sow') {
                      let sowedCount = 0;
                      for(let i=0; i<15; i++) {
-                         if (p.farmContent[i] && !oldP.farmContent[i]) {
-                             sowedCount++;
-                         }
+                         if (p.farmContent[i] && !oldP.farmContent[i]) sowedCount++;
                      }
-                     if (sowedCount === 0) {
-                         isValid = false;
-                         errMsg = "Must sow at least one crop!";
+                     if (sowedCount === 0) { isValid = false; errMsg = "Must sow at least one crop!"; }
+                 }
+
+                 if (mode === 'reno_major' && p.houseType === oldP.houseType) {
+                     isValid = false; errMsg = "Must successfully renovate house first!";
+                 }
+
+                 // Major Purchase Execution
+                 if (isValid && (mode === 'major' || (mode === 'reno_major' && p.tempMode.selectedMajorId))) {
+                     if (mode === 'major' && !p.tempMode.selectedMajorId) {
+                         isValid = false; errMsg = "Must buy a Major Improvement";
+                     } else {
+                         const mid = p.tempMode.selectedMajorId!;
+                         const major = stateRef.current.gameState.majors.find(m => m.id === mid);
+                         if (major) {
+                             // Check resources again just in case (should be validated on select)
+                             const cost = major.cost;
+                             if (p.res.wood < (cost.wood||0) || p.res.clay < (cost.clay||0) || p.res.reed < (cost.reed||0) || p.res.stone < (cost.stone||0)) {
+                                 isValid = false; errMsg = "Insufficient resources for Major";
+                             } else {
+                                 // Execute Purchase
+                                 updatePlayer(pId, pp => ({
+                                     ...pp,
+                                     res: {
+                                         ...pp.res,
+                                         wood: pp.res.wood - (cost.wood||0),
+                                         clay: pp.res.clay - (cost.clay||0),
+                                         reed: pp.res.reed - (cost.reed||0),
+                                         stone: pp.res.stone - (cost.stone||0),
+                                     },
+                                     majors: [...pp.majors, major]
+                                 }));
+                                 updateGameState(prev => ({ ...prev, majors: prev.majors.filter(m => m.id !== mid) }));
+                                 addLog(`${p.name} bought ${major.name}`, p.color);
+                             }
+                         } else {
+                             // Should not happen if selectedId is valid
+                             isValid = false; errMsg = "Selected card not found";
+                         }
                      }
                  }
 
@@ -580,7 +624,6 @@ export const useGameLogic = () => {
                      if (p.res.maxWorkers >= 5) {
                          isValid = false; errMsg = "Max family size is 5";
                      } else {
-                         // Apply the growth effect
                          updatePlayer(pId, pp => ({
                              ...pp,
                              res: { ...pp.res, maxWorkers: pp.res.maxWorkers + 1 }
@@ -593,7 +636,7 @@ export const useGameLogic = () => {
                      addLog(`⚠️ Invalid: ${errMsg}`, 'red');
                      return;
                  }
-                 if (mode !== 'grow' && mode !== 'grow_force') {
+                 if (mode !== 'grow' && mode !== 'grow_force' && mode !== 'major') {
                      addLog(`${p.name} completed ${p.tempMode.mode}`, p.color);
                  }
              }
@@ -621,32 +664,39 @@ export const useGameLogic = () => {
         updatePlayer(pIdx, p => p.tempMode ? ({...p, tempMode: {...p.tempMode!, currentSeed: seed}}) : p);
     };
 
-    const buyMajor = (majorId: string) => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const p = stateRef.current.players[(startPlayer + turnIdx) % 4];
-        const major = stateRef.current.gameState.majors.find(m => m.id === majorId);
-        
-        if (!major) return;
-        const cost = major.cost;
-        // Check cost
-        if (p.res.wood < (cost.wood||0) || p.res.clay < (cost.clay||0) || p.res.reed < (cost.reed||0) || p.res.stone < (cost.stone||0)) {
-            addLog("Not enough resources", "red");
-            return;
+    const selectMajor = (majorId: string) => {
+        const { startPlayer, turnIdx, pendingAction } = stateRef.current.gameState;
+        const pIdx = (startPlayer + turnIdx) % 4;
+        const p = stateRef.current.players[pIdx];
+
+        // Ensure renovation is done before selection in reno_major mode
+        if (p.tempMode?.mode === 'reno_major' && pendingAction) {
+             const oldP = JSON.parse(pendingAction.snapshot);
+             if (p.houseType === oldP.houseType) {
+                 addLog("Must successfully renovate house before selecting a Major Improvement", "red");
+                 return;
+             }
         }
 
-        updatePlayer(p.id, pp => ({
+        // Toggle selection logic
+        const newSelectedId = p.tempMode?.selectedMajorId === majorId ? undefined : majorId;
+
+        // Optional: Pre-validate cost (for UI feedback, though actual check is in Confirm)
+        if (newSelectedId) {
+            const major = stateRef.current.gameState.majors.find(m => m.id === newSelectedId);
+            if (major) {
+                const cost = major.cost;
+                if (p.res.wood < (cost.wood||0) || p.res.clay < (cost.clay||0) || p.res.reed < (cost.reed||0) || p.res.stone < (cost.stone||0)) {
+                    addLog("Not enough resources to select this card", "red");
+                    return;
+                }
+            }
+        }
+        
+        updatePlayer(pIdx, pp => ({
             ...pp,
-            res: {
-                ...pp.res,
-                wood: pp.res.wood - (cost.wood||0),
-                clay: pp.res.clay - (cost.clay||0),
-                reed: pp.res.reed - (cost.reed||0),
-                stone: pp.res.stone - (cost.stone||0),
-            },
-            majors: [...pp.majors, major]
+            tempMode: { ...pp.tempMode!, selectedMajorId: newSelectedId }
         }));
-        updateGameState(prev => ({ ...prev, majors: prev.majors.filter(m => m.id !== majorId) }));
-        addLog(`${p.name} bought ${major.name}`, p.color);
     };
 
     const renovate = () => {
@@ -763,6 +813,21 @@ export const useGameLogic = () => {
 
              // Build Room/Stable
              if (mode === 'build_menu') {
+                 // Check if it's a stable we just built in this turn (type 5)
+                 const pending = stateRef.current.gameState.pendingAction;
+                 let wasStable = false;
+                 if (pending && pending.snapshot) {
+                     const snap = JSON.parse(pending.snapshot);
+                     wasStable = snap.farm[tileIdx] === 5;
+                 }
+
+                 // Refund Stable Logic: If it is currently a stable, and it wasn't one before, we can remove it.
+                 if (nf[tileIdx] === 5 && !wasStable && pp.tempMode?.currentTool === 'stable') {
+                     nf[tileIdx] = 0; // Set back to empty
+                     res.wood += 2; // Refund wood
+                     return { ...pp, farm: nf, res };
+                 }
+
                  if (nf[tileIdx] === 0) {
                      // Room Logic
                      if (pp.tempMode?.currentTool === 'room') {
@@ -789,6 +854,13 @@ export const useGameLogic = () => {
                             addLog("Need 2 Wood for Stable", "red");
                             return pp;
                         }
+
+                        // Enforce adjacency rule for 2nd+ stable
+                        if (currentStables > 0 && !hasNeighbor(pp, tileIdx, 5)) {
+                            addLog("Subsequent stables must neighbor an existing stable", "red");
+                            return pp;
+                        }
+
                         res.wood -= 2;
                         nf[tileIdx] = 5; // 5 is Stable
                         return { ...pp, farm: nf, res };
@@ -858,6 +930,6 @@ export const useGameLogic = () => {
     return {
         gameState, players, logs, floatText,
         clickAction, cancelMode, handleFarmClick, handleFenceClick, confirmModeAction,
-        switchTool, toggleSeed, buyMajor, renovate
+        switchTool, toggleSeed, selectMajor, renovate
     };
 };

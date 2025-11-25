@@ -1,3 +1,4 @@
+
 import { Allocation, FarmLayout, Player, ResourceType } from "../types";
 import { SCORING_TIERS } from "../constants";
 
@@ -26,6 +27,7 @@ export const analyzeFarmLayout = (p: Player): FarmLayout => {
     };
 
     for (let i = 0; i < 15; i++) {
+        // We only care about Empty(0) or Stable(5) for valid pastures
         if (visited.has(i) || (p.farm[i] !== 0 && p.farm[i] !== 5)) continue;
         let queue = [i], tiles: number[] = [], enclosed = true, hasStable = (p.farm[i] === 5);
         visited.add(i);
@@ -142,12 +144,18 @@ export const calculateAllocation = (p: Player): Allocation => {
 
 export const validateFenceRules = (p: Player): boolean => {
     // 1. Degree Check: No "Loose Ends" allowed.
-    // In a closed graph (Eulerian or collection of cycles), every vertex must have degree >= 2.
-    // Specifically, a vertex with Degree 1 is a dead end. Degree 3 (T-junction) is allowed for shared walls.
     const degrees: { [key: string]: number } = {};
     const addDeg = (x: number, y: number) => { 
         const k = `${x},${y}`; 
         degrees[k] = (degrees[k] || 0) + 1; 
+    };
+
+    const hasW = (idx: number, s: string): boolean => {
+        if (s === 't') return p.fences.has(`${idx}-t`);
+        if (s === 'l') return p.fences.has(`${idx}-l`);
+        if (s === 'r') return (idx % 5 === 4) ? p.fences.has(`${idx}-r`) : p.fences.has(`${idx + 1}-l`);
+        if (s === 'b') return (idx >= 10) ? p.fences.has(`${idx}-b`) : p.fences.has(`${idx + 5}-t`);
+        return false;
     };
 
     p.fences.forEach(key => {
@@ -156,10 +164,6 @@ export const validateFenceRules = (p: Player): boolean => {
         const r = Math.floor(idx / 5);
         const c = idx % 5;
         // Map edges to vertices (x=col, y=row)
-        // top: (c, r) -> (c+1, r)
-        // bottom: (c, r+1) -> (c+1, r+1)
-        // left: (c, r) -> (c, r+1)
-        // right: (c+1, r) -> (c+1, r+1)
         if (side === 't') { addDeg(c, r); addDeg(c + 1, r); }
         if (side === 'b') { addDeg(c, r + 1); addDeg(c + 1, r + 1); }
         if (side === 'l') { addDeg(c, r); addDeg(c, r + 1); }
@@ -167,29 +171,49 @@ export const validateFenceRules = (p: Player): boolean => {
     });
 
     for (const k in degrees) {
-        // If any vertex has exactly 1 fence connected, it's a loose end.
-        // Degree 0 is impossible (we iterate existing fences).
+        // Degree 1 means a dead end
         if (degrees[k] === 1) return false; 
     }
 
-    // 2. Content Check: Fences cannot enclose Rooms(1) or Fields(2)
-    // analyzeFarmLayout only returns pastures that are fully enclosed.
-    const layout = analyzeFarmLayout(p);
-    
-    // Check if any fence exists that is NOT part of a valid pasture
-    // We can count total fences used in pastures vs total fences placed
-    // But simplified check: ensure no pasture contains invalid types.
-    for (const pasture of layout.pastures) {
-        for (const tileIdx of pasture.tiles) {
-            const type = p.farm[tileIdx];
-            if (type !== 0 && type !== 5) return false; // Can only fence Empty(0) or Stable(5)
+    // 2. Content Check: Fences cannot enclose Rooms(1) or Fields(2).
+    // They can ONLY enclose Empty(0) or Stable(5).
+    // We iterate through all Rooms and Fields and verify they can "escape" to the outside.
+    for (let i = 0; i < 15; i++) {
+        const type = p.farm[i];
+        if (type === 1 || type === 2) { // Room or Field
+            // Check if enclosed by performing a Flood Fill (BFS)
+            let escaped = false;
+            let queue = [i];
+            let visited = new Set<number>();
+            visited.add(i);
+
+            while(queue.length > 0) {
+                const u = queue.shift()!;
+                const neighbors = [
+                    { n: u < 5 ? -1 : u - 5, w: 't' }, 
+                    { n: u >= 10 ? -1 : u + 5, w: 'b' }, 
+                    { n: u % 5 === 0 ? -1 : u - 1, w: 'l' }, 
+                    { n: u % 5 === 4 ? -1 : u + 1, w: 'r' }
+                ];
+
+                for (let nb of neighbors) {
+                    if (!hasW(u, nb.w)) {
+                        if (nb.n === -1) {
+                            escaped = true;
+                            break;
+                        } else {
+                            if (!visited.has(nb.n)) {
+                                visited.add(nb.n);
+                                queue.push(nb.n);
+                            }
+                        }
+                    }
+                }
+                if (escaped) break;
+            }
+            if (!escaped) return false; // Trapped! Invalid.
         }
     }
-    
-    // Ensure all placed fences are actually part of a pasture loop?
-    // If degree check passes (no loose ends), then fences form cycles.
-    // If those cycles contain Rooms/Fields, the check above catches it.
-    // If those cycles contain Empty/Stable, they are valid pastures.
     
     return true;
 };

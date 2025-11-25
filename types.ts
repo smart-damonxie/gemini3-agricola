@@ -79,6 +79,7 @@ export interface TempMode {
   currentSeed?: ResourceType;
   pending?: { [key: number]: 'room' | 'stable' };
   currentTool?: 'room' | 'stable';
+  selectedMajorId?: string;
 }
 
 export interface GameState {
