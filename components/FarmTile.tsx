@@ -79,20 +79,20 @@ const FarmTile: React.FC<Props> = ({ p, idx, content, onClick, onFenceClick }) =
       })}
 
       {/* Render Fences - Positioned in the 4px grid gaps */}
-      {/* We extend them by 4px on ends to ensure corners meet perfectly without gaps */}
-      {hasFence('t') && <div className="absolute top-[-4px] left-[-4px] right-[-4px] h-1 bg-fence z-30 pointer-events-none" />}
-      {hasFence('b') && <div className="absolute bottom-[-4px] left-[-4px] right-[-4px] h-1 bg-fence z-30 pointer-events-none" />}
-      {hasFence('l') && <div className="absolute left-[-4px] top-[-4px] bottom-[-4px] w-1 bg-fence z-30 pointer-events-none" />}
-      {hasFence('r') && <div className="absolute right-[-4px] top-[-4px] bottom-[-4px] w-1 bg-fence z-30 pointer-events-none" />}
+      {/* Thick Sky Blue Fences (8px wide/high) centered on the gap */}
+      {hasFence('t') && <div className="absolute top-[-6px] left-[-6px] right-[-6px] h-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
+      {hasFence('b') && <div className="absolute bottom-[-6px] left-[-6px] right-[-6px] h-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
+      {hasFence('l') && <div className="absolute left-[-6px] top-[-6px] bottom-[-6px] w-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
+      {hasFence('r') && <div className="absolute right-[-6px] top-[-6px] bottom-[-6px] w-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
 
       {/* Fence Click Zones (Only if onFenceClick is provided) */}
       {/* Zones cover the gap + a small strip of the tile for easier clicking */}
       {onFenceClick && (
           <>
-            <div className={`${fenceZoneBase} top-[-4px] left-0 right-0 h-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('t'); }} title="Build Top Fence" />
-            <div className={`${fenceZoneBase} bottom-[-4px] left-0 right-0 h-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('b'); }} title="Build Bottom Fence" />
-            <div className={`${fenceZoneBase} top-0 bottom-0 left-[-4px] w-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('l'); }} title="Build Left Fence" />
-            <div className={`${fenceZoneBase} top-0 bottom-0 right-[-4px] w-4`} onClick={(e) => { e.stopPropagation(); onFenceClick('r'); }} title="Build Right Fence" />
+            <div className={`${fenceZoneBase} top-[-8px] left-0 right-0 h-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('t'); }} title="Build Top Fence" />
+            <div className={`${fenceZoneBase} bottom-[-8px] left-0 right-0 h-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('b'); }} title="Build Bottom Fence" />
+            <div className={`${fenceZoneBase} top-0 bottom-0 left-[-8px] w-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('l'); }} title="Build Left Fence" />
+            <div className={`${fenceZoneBase} top-0 bottom-0 right-[-8px] w-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('r'); }} title="Build Right Fence" />
           </>
       )}
     </div>
