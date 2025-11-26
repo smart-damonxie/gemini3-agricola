@@ -92,6 +92,35 @@ export const useGameLogic = () => {
         stateRef.current.gameState = newState;
     };
 
+    // DEBUG HELPERS
+    const debugSetState = (newGs: GameState) => {
+        setGameState(newGs);
+        stateRef.current.gameState = newGs;
+    };
+    const debugSetPlayers = (newPs: Player[]) => {
+        setPlayers(newPs);
+        stateRef.current.players = newPs;
+    };
+    const debugForceAction = (actId: string) => {
+        // Force the current player to execute this action, bypassing some checks
+        const { startPlayer, turnIdx } = stateRef.current.gameState;
+        const pIdx = (startPlayer + turnIdx) % 4;
+        
+        // Ensure player has workers
+        if (stateRef.current.players[pIdx].res.workers <= 0) {
+            updatePlayer(pIdx, p => ({...p, res: {...p.res, workers: 1}}));
+        }
+        // Clear occupation if needed
+        if (stateRef.current.gameState.occupied[actId] !== undefined) {
+             const newOcc = { ...stateRef.current.gameState.occupied };
+             delete newOcc[actId];
+             updateGameState(prev => ({...prev, occupied: newOcc}));
+        }
+
+        // Trigger Click
+        clickAction(actId);
+    };
+
     // --- Init ---
     useEffect(() => {
         if (initRef.current) return;
@@ -591,7 +620,11 @@ export const useGameLogic = () => {
          const pIdx = (startPlayer + turnIdx) % 4;
          const p = stateRef.current.players[pIdx];
 
-         if (p.type !== 'human' || occupied[actId] !== undefined || p.res.workers <= 0) return;
+         // DEBUG OVERRIDE FOR TEST MODE (Allows clicking any action)
+         // But we still check logic. 
+         // For test mode, the UI checks might have been bypassed, but here:
+         if (p.type !== 'human' && p.type !== 'ai') return; // Basic safety
+
          const act = BASE_ACTIONS.find(a => a.id === actId) || roundCards.find(a => a.id === actId);
          if (!act) return;
 
@@ -1082,6 +1115,12 @@ export const useGameLogic = () => {
         switchTool, toggleSeed, selectMajor, renovate,
         viewingCard, openCardDetail, closeCardDetail,
         adjustHarvest, resetHarvest, confirmHarvest,
-        toggleConversion, adjustConversion, confirmConversion
+        toggleConversion, adjustConversion, confirmConversion,
+        debug: {
+            setGameState: debugSetState,
+            setPlayers: debugSetPlayers,
+            forceAction: debugForceAction,
+            stateRef
+        }
     };
 };

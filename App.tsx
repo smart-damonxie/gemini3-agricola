@@ -6,6 +6,7 @@ import ActionSlot from './components/ActionSlot';
 import PlayerPanel from './components/PlayerPanel';
 import ScoringTable from './components/ScoringTable';
 import RoundTracker from './components/RoundTracker';
+import TestPanel from './components/TestPanel';
 
 const App: React.FC = () => {
   const { 
@@ -29,11 +30,13 @@ const App: React.FC = () => {
     confirmHarvest,
     toggleConversion,
     adjustConversion,
-    confirmConversion
+    confirmConversion,
+    debug
   } = useGameLogic();
 
   const [showMajorList, setShowMajorList] = useState(false);
   const [showScoring, setShowScoring] = useState(false);
+  const [isTestMode, setIsTestMode] = useState(false);
 
   const activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
 
@@ -62,6 +65,14 @@ const App: React.FC = () => {
             className="bg-stone-800 px-3 py-1.5 rounded-full font-bold shadow-lg border border-stone-600 text-yellow-500 hover:bg-stone-700 hover:text-yellow-400 transition-colors flex items-center gap-2 text-sm whitespace-nowrap"
         >
           📊 Rules
+        </button>
+
+        {/* Test Mode Toggle */}
+        <button 
+            onClick={() => setIsTestMode(true)}
+            className="bg-red-900/40 px-3 py-1.5 rounded-full font-bold shadow-lg border border-red-800 text-red-400 hover:bg-red-800 hover:text-white transition-colors flex items-center gap-2 text-sm whitespace-nowrap"
+        >
+          🛠️ Test
         </button>
 
         {/* Action Toolbar - Now Oval and Top Left */}
@@ -173,8 +184,8 @@ const App: React.FC = () => {
         {/* Left: Board */}
         <div className="w-[440px] flex flex-col gap-2 bg-board-bg p-3 rounded-lg shadow-2xl border-4 border-stone-900">
           
-          <div className="text-xs text-stone-300 uppercase tracking-widest border-b border-stone-700 pb-1 mb-1 mt-2">
-            Base Actions
+          <div className="text-xs text-stone-300 uppercase tracking-widest border-b border-stone-700 pb-1 mb-1 mt-2 flex justify-between">
+            <span>Base Actions</span>
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             {BASE_ACTIONS.map(act => (
@@ -246,6 +257,15 @@ const App: React.FC = () => {
 
       {/* Scoring Modal */}
       {showScoring && <ScoringTable onClose={() => setShowScoring(false)} />}
+
+      {/* Test Panel */}
+      <TestPanel 
+        isOpen={isTestMode} 
+        onClose={() => setIsTestMode(false)}
+        gameState={gameState}
+        players={players}
+        debug={debug}
+      />
 
       {/* Harvest Human Interaction Modal */}
       {isHumanHarvest && (
