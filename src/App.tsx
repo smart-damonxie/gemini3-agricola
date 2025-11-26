@@ -4,8 +4,6 @@ import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS } from './constants';
 import ActionSlot from './components/ActionSlot';
 import PlayerPanel from './components/PlayerPanel';
-import ScoringTable from './components/ScoringTable';
-import RoundTracker from './components/RoundTracker';
 
 const App: React.FC = () => {
   const { 
@@ -33,7 +31,6 @@ const App: React.FC = () => {
   } = useGameLogic();
 
   const [showMajorList, setShowMajorList] = useState(false);
-  const [showScoring, setShowScoring] = useState(false);
 
   const activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
 
@@ -53,16 +50,10 @@ const App: React.FC = () => {
       {/* Top Bar & Action Toolbar Area */}
       <div className="w-full max-w-6xl flex items-center gap-4 bg-black/40 p-3 rounded-lg mb-4 backdrop-blur-sm border border-white/10 relative z-50">
         
-        {/* Round Tracker */}
-        <RoundTracker currentRound={gameState.round} />
-
-        {/* Scoring Rules Button */}
-        <button 
-            onClick={() => setShowScoring(true)}
-            className="bg-stone-800 px-3 py-1.5 rounded-full font-bold shadow-lg border border-stone-600 text-yellow-500 hover:bg-stone-700 hover:text-yellow-400 transition-colors flex items-center gap-2 text-sm whitespace-nowrap"
-        >
-          📊 Rules
-        </button>
+        {/* Round Badge */}
+        <div className="bg-stone-800 px-4 py-1.5 rounded-full font-bold shadow-lg border border-stone-600 whitespace-nowrap">
+          Round {gameState.round}
+        </div>
 
         {/* Action Toolbar - Now Oval and Top Left */}
         {isHumanTurn && activePlayer.tempMode && (
@@ -244,8 +235,7 @@ const App: React.FC = () => {
           ))}
       </div>
 
-      {/* Scoring Modal */}
-      {showScoring && <ScoringTable onClose={() => setShowScoring(false)} />}
+      {/* Note: Floating "Convert Food" button removed as requested */}
 
       {/* Harvest Human Interaction Modal */}
       {isHumanHarvest && (
