@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Player, Allocation } from '../types';
+import { Player, Allocation, MajorCard } from '../types';
 import FarmTile from './FarmTile';
 import { calculateAllocation, calculateScore } from '../utils/gameLogic';
 
@@ -9,6 +10,8 @@ interface Props {
   isNextStart: boolean;
   onFarmClick: (tileIdx: number) => void;
   onFenceClick?: (tileIdx: number, side: 't'|'b'|'l'|'r') => void;
+  onMajorClick?: (major: MajorCard) => void;
+  onConvertClick?: () => void;
 }
 
 const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
@@ -17,7 +20,7 @@ const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
   </span>
 );
 
-const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmClick, onFenceClick }) => {
+const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmClick, onFenceClick, onMajorClick, onConvertClick }) => {
   const allocation = calculateAllocation(player);
   const score = calculateScore(player);
 
@@ -63,10 +66,27 @@ const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmCli
         )}
       </div>
 
+      {/* Action Buttons for Active Human */}
+      {isActive && player.type === 'human' && onConvertClick && (
+          <div className="mb-2">
+              <button 
+                  onClick={(e) => { e.stopPropagation(); onConvertClick(); }}
+                  className="w-full bg-yellow-700 hover:bg-yellow-600 text-white text-xs font-bold py-1 px-2 rounded border border-yellow-500 shadow flex items-center justify-center gap-1"
+              >
+                  <span>🍲</span> Convert Food
+              </button>
+          </div>
+      )}
+
       {/* Cards */}
       <div className="flex gap-1 mb-2 flex-wrap">
           {player.majors.map(m => (
-              <div key={m.id} className="w-6 h-8 bg-orange-700 border border-orange-400 rounded-sm text-[10px] flex items-center justify-center text-white cursor-help hover:scale-125 transition-transform" title={m.name}>
+              <div 
+                key={m.id} 
+                onClick={() => onMajorClick && onMajorClick(m)}
+                className="w-6 h-8 bg-orange-700 border border-orange-400 rounded-sm text-[10px] flex items-center justify-center text-white cursor-help hover:scale-125 transition-transform" 
+                title={m.name}
+              >
                   {m.name.substring(0, 1)}
               </div>
           ))}

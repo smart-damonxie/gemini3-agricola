@@ -76,7 +76,7 @@ export interface Player {
   begging: number;
   tempMode: TempMode | null;
   harvestTemp: HarvestConversion | null; 
-  conversionTemp?: HarvestConversion | null;
+  conversionTemp?: HarvestConversion | null; // For anytime conversion
   overflowTemp?: any;
 }
 
