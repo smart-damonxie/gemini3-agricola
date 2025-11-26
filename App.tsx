@@ -1,9 +1,11 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS } from './constants';
 import ActionSlot from './components/ActionSlot';
 import PlayerPanel from './components/PlayerPanel';
+import ScoringTable from './components/ScoringTable';
+import RoundTracker from './components/RoundTracker';
 
 const App: React.FC = () => {
   const { 
@@ -30,6 +32,9 @@ const App: React.FC = () => {
     confirmConversion
   } = useGameLogic();
 
+  const [showMajorList, setShowMajorList] = useState(false);
+  const [showScoring, setShowScoring] = useState(false);
+
   const activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
 
   // Helper to find action name for simple mode
@@ -40,16 +45,124 @@ const App: React.FC = () => {
   const isHumanHarvest = gameState.harvestPhase && activePlayer.type === 'human' && activePlayer.harvestTemp;
   const isConverting = activePlayer.type === 'human' && activePlayer.conversionTemp;
   const isHumanTurn = activePlayer.type === 'human' && !gameState.harvestPhase;
+  const actionDetails = activePlayer.tempMode ? getActionDetails(activePlayer.tempMode.actId) : null;
 
   return (
     <div className="flex flex-col items-center p-2 max-w-[1600px] mx-auto pb-20">
       
-      {/* Top Bar */}
-      <div className="w-full max-w-6xl flex justify-between items-center bg-black/40 p-3 rounded-lg mb-4 backdrop-blur-sm border border-white/10">
-        <div className="bg-stone-800 px-4 py-1.5 rounded-full font-bold shadow-lg border border-stone-600">
-          Round {gameState.round}
-        </div>
-        <div className="bg-stone-800 px-4 py-1.5 rounded-full font-bold shadow-lg border border-stone-600 flex items-center gap-2">
+      {/* Top Bar & Action Toolbar Area */}
+      <div className="w-full max-w-6xl flex items-center gap-4 bg-black/40 p-3 rounded-lg mb-4 backdrop-blur-sm border border-white/10 relative z-50">
+        
+        {/* Round Tracker */}
+        <RoundTracker currentRound={gameState.round} />
+
+        {/* Scoring Rules Button */}
+        <button 
+            onClick={() => setShowScoring(true)}
+            className="bg-stone-800 px-3 py-1.5 rounded-full font-bold shadow-lg border border-stone-600 text-yellow-500 hover:bg-stone-700 hover:text-yellow-400 transition-colors flex items-center gap-2 text-sm whitespace-nowrap"
+        >
+          📊 Rules
+        </button>
+
+        {/* Action Toolbar - Now Oval and Top Left */}
+        {isHumanTurn && activePlayer.tempMode && (
+          <div className="flex-1 flex justify-start">
+             <div className="relative flex items-center gap-3 bg-slate-800/95 px-4 py-1.5 rounded-full shadow-2xl border border-slate-500 animate-fadeIn text-sm">
+                
+                {/* Action Name */}
+                <div className="font-bold text-sky-400 whitespace-nowrap border-r border-slate-600 pr-3">
+                   {activePlayer.tempMode.mode === 'simple' ? actionDetails?.name : `Action: ${activePlayer.tempMode.mode}`}
+                </div>
+
+                {/* Controls Area */}
+                <div className="flex items-center gap-2">
+                    
+                    {/* Build Tools */}
+                    {activePlayer.tempMode.mode === 'build_menu' && (
+                        <>
+                            <button onClick={() => switchTool('room')} className={`px-2 py-0.5 rounded-full text-xs font-bold transition-colors ${activePlayer.tempMode.currentTool === 'room' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-gray-400 hover:bg-slate-600'}`}>
+                                🏠 Room
+                            </button>
+                            <button onClick={() => switchTool('stable')} className={`px-2 py-0.5 rounded-full text-xs font-bold transition-colors ${activePlayer.tempMode.currentTool === 'stable' ? 'bg-orange-600 text-white' : 'bg-slate-700 text-gray-400 hover:bg-slate-600'}`}>
+                                🏚️ Stable
+                            </button>
+                        </>
+                    )}
+
+                    {/* Sowing Tools */}
+                    {(activePlayer.tempMode.mode === 'sow' || activePlayer.tempMode.mode === 'plow_sow') && (
+                        <>
+                            <button onClick={() => toggleSeed('grain')} className={`px-2 py-0.5 rounded-full text-xs font-bold transition-colors ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'bg-slate-700 text-gray-400 hover:bg-slate-600'}`}>
+                                🌾 Grain ({activePlayer.res.grain})
+                            </button>
+                            <button onClick={() => toggleSeed('veg')} className={`px-2 py-0.5 rounded-full text-xs font-bold transition-colors ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'bg-slate-700 text-gray-400 hover:bg-slate-600'}`}>
+                                🥕 Veg ({activePlayer.res.veg})
+                            </button>
+                        </>
+                    )}
+
+                    {/* Renovation */}
+                    {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && (
+                         <button onClick={renovate} className="bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-0.5 px-3 rounded-full shadow">
+                             🔨 Renovate
+                         </button>
+                    )}
+
+                    {/* Major Selection Dropdown Trigger */}
+                    {(activePlayer.tempMode.mode === 'major' || activePlayer.tempMode.mode === 'reno_major') && (
+                        <div className="relative">
+                            <button 
+                                onClick={() => setShowMajorList(!showMajorList)}
+                                className={`px-3 py-0.5 rounded-full text-xs font-bold border flex items-center gap-1 ${activePlayer.tempMode.selectedMajorId ? 'bg-yellow-800 border-yellow-500 text-yellow-100' : 'bg-slate-700 border-slate-500 text-gray-300'}`}
+                            >
+                                {activePlayer.tempMode.selectedMajorId 
+                                    ? `Selected: ${gameState.majors.find(m => m.id === activePlayer.tempMode?.selectedMajorId)?.name.substring(0, 8)}...` 
+                                    : "Select Improvement ▾"}
+                            </button>
+                            
+                            {/* Dropdown List */}
+                            {showMajorList && (
+                                <div className="absolute top-full left-0 mt-2 w-64 max-h-[300px] overflow-y-auto bg-slate-900 rounded-lg border border-slate-600 shadow-xl p-2 z-[60]">
+                                    {gameState.majors.map(m => (
+                                        <div 
+                                            key={m.id}
+                                            onClick={() => { selectMajor(m.id); setShowMajorList(false); }}
+                                            className={`
+                                                cursor-pointer p-2 mb-1 rounded text-xs border transition-colors
+                                                ${activePlayer.tempMode?.selectedMajorId === m.id 
+                                                    ? 'bg-yellow-900/60 border-yellow-500 text-yellow-100' 
+                                                    : 'bg-slate-800 border-slate-700 text-gray-300 hover:bg-slate-700'}
+                                            `}
+                                        >
+                                            <div className="font-bold">{m.name}</div>
+                                            <div className="text-[10px] opacity-75">{JSON.stringify(m.cost).replace(/["{}]/g, '').replace(/:/g, '')}</div>
+                                        </div>
+                                    ))}
+                                    {gameState.majors.length === 0 && <div className="text-gray-500 text-xs text-center p-2">No majors available</div>}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                <div className="w-px h-4 bg-slate-600 mx-1"></div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-2">
+                    <button onClick={() => confirmModeAction(activePlayer.id)} className="bg-green-600 hover:bg-green-500 text-white text-xs font-bold py-1 px-3 rounded-full shadow transition-transform active:scale-95">
+                        Confirm
+                    </button>
+                    <button onClick={cancelMode} className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold py-1 px-3 rounded-full shadow transition-transform active:scale-95">
+                        Cancel
+                    </button>
+                </div>
+
+             </div>
+          </div>
+        )}
+
+        {/* Turn Badge (Pushed to right) */}
+        <div className="bg-stone-800 px-4 py-1.5 rounded-full font-bold shadow-lg border border-stone-600 flex items-center gap-2 ml-auto">
           Turn: <span style={{ color: activePlayer.color }}>{activePlayer.name}</span>
         </div>
       </div>
@@ -131,137 +244,8 @@ const App: React.FC = () => {
           ))}
       </div>
 
-      {/* Anytime Food Conversion Button - Floating Backup */}
-      {isHumanTurn && (
-        <div className="fixed bottom-6 right-6 z-40 animate-fadeIn">
-           <button 
-              onClick={toggleConversion}
-              className="bg-yellow-700 hover:bg-yellow-600 text-white font-bold py-3 px-6 rounded-full shadow-2xl border-2 border-yellow-500 flex items-center gap-2 transform transition-transform hover:scale-105 active:scale-95"
-           >
-              <span className="text-xl">🍲</span> 
-              <span className="text-sm">Convert Food</span>
-           </button>
-        </div>
-      )}
-
-      {/* Action Toolbar */}
-      {isHumanTurn && activePlayer.tempMode && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-800 p-4 rounded-lg shadow-2xl border border-slate-600 flex flex-col gap-3 items-center z-50 animate-bounce-in min-w-[300px]">
-              
-              {activePlayer.tempMode.mode === 'simple' && (
-                  <div className="text-white mb-2 text-center">
-                     {(() => {
-                         const act = getActionDetails(activePlayer.tempMode!.actId);
-                         return (
-                             <>
-                               <div className="font-bold text-lg mb-1">{act?.name}</div>
-                               <div className="text-sm text-gray-400">{act?.desc}</div>
-                             </>
-                         );
-                     })()}
-                  </div>
-              )}
-              
-              {activePlayer.tempMode.mode !== 'simple' && (
-                <div className="flex items-center gap-2">
-                    <span className="font-bold text-sky-400">Action: {activePlayer.tempMode.mode}</span>
-                </div>
-              )}
-
-              {/* Build Menu Tools */}
-              {activePlayer.tempMode.mode === 'build_menu' && (
-                  <div className="flex gap-2 bg-slate-700 p-1 rounded">
-                      <button 
-                         onClick={() => switchTool('room')}
-                         className={`px-3 py-1 rounded text-sm font-bold ${activePlayer.tempMode.currentTool === 'room' ? 'bg-blue-600 text-white' : 'bg-slate-600 text-gray-400 hover:bg-slate-500'}`}
-                      >
-                         🏠 Build Room
-                      </button>
-                      <button 
-                         onClick={() => switchTool('stable')}
-                         className={`px-3 py-1 rounded text-sm font-bold ${activePlayer.tempMode.currentTool === 'stable' ? 'bg-orange-600 text-white' : 'bg-slate-600 text-gray-400 hover:bg-slate-500'}`}
-                      >
-                         🏚️ Build Stable
-                      </button>
-                  </div>
-              )}
-
-              {/* Sowing Tools */}
-              {(activePlayer.tempMode.mode === 'sow' || activePlayer.tempMode.mode === 'plow_sow') && (
-                  <div className="flex gap-2 bg-slate-700 p-1 rounded items-center">
-                      <span className="text-xs text-gray-400 mr-1">Select Seed:</span>
-                      <button 
-                         onClick={() => toggleSeed('grain')}
-                         className={`px-3 py-1 rounded text-sm font-bold ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'bg-slate-600 text-gray-400 hover:bg-slate-500'}`}
-                      >
-                         🌾 Grain ({activePlayer.res.grain})
-                      </button>
-                      <button 
-                         onClick={() => toggleSeed('veg')}
-                         className={`px-3 py-1 rounded text-sm font-bold ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'bg-slate-600 text-gray-400 hover:bg-slate-500'}`}
-                      >
-                         🥕 Veg ({activePlayer.res.veg})
-                      </button>
-                  </div>
-              )}
-
-              {/* Renovation Button */}
-              {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && (
-                  <button 
-                     onClick={renovate}
-                     className="bg-purple-600 hover:bg-purple-500 text-white font-bold py-1 px-4 rounded shadow w-full text-sm"
-                  >
-                     🔨 Renovate House (1 Reed + Material)
-                  </button>
-              )}
-
-              {/* Major Selection Area */}
-              {(activePlayer.tempMode.mode === 'major' || activePlayer.tempMode.mode === 'reno_major') && (
-                  <div className="flex flex-col gap-1 w-full max-h-[200px] overflow-y-auto bg-slate-900 p-2 rounded border border-slate-700">
-                      <span className="text-xs text-gray-400 font-bold uppercase mb-1">Select Improvement:</span>
-                      {gameState.majors.map(m => {
-                          const isSelected = activePlayer.tempMode?.selectedMajorId === m.id;
-                          return (
-                              <button 
-                                 key={m.id}
-                                 onClick={() => selectMajor(m.id)}
-                                 className={`
-                                     text-left text-xs p-2 rounded border flex justify-between group transition-all
-                                     ${isSelected 
-                                        ? 'bg-yellow-900/50 border-yellow-400 ring-2 ring-yellow-500/50' 
-                                        : 'bg-orange-900/50 border-orange-700 hover:bg-orange-800'
-                                     }
-                                 `}
-                              >
-                                 <span className={`font-bold ${isSelected ? 'text-yellow-200' : 'text-orange-200'}`}>
-                                    {isSelected && '✓ '} {m.name}
-                                 </span>
-                                 <span className="text-gray-400 group-hover:text-white">
-                                    {JSON.stringify(m.cost).replace(/["{}]/g, '').replace(/:/g, '')}
-                                 </span>
-                              </button>
-                          );
-                      })}
-                      {gameState.majors.length === 0 && <span className="text-xs text-gray-500 italic">No majors available</span>}
-                  </div>
-              )}
-
-              <div className="flex gap-4 mt-2">
-                <button 
-                    onClick={() => confirmModeAction(activePlayer.id)}
-                    className="bg-green-600 hover:bg-green-500 text-white font-bold py-1 px-6 rounded shadow"
-                >
-                    Confirm & End Turn
-                </button>
-                <button 
-                    onClick={cancelMode}
-                    className="bg-red-600 hover:bg-red-500 text-white font-bold py-1 px-4 rounded shadow"
-                >
-                    Cancel
-                </button>
-              </div>
-          </div>
-      )}
+      {/* Scoring Modal */}
+      {showScoring && <ScoringTable onClose={() => setShowScoring(false)} />}
 
       {/* Harvest Human Interaction Modal */}
       {isHumanHarvest && (
