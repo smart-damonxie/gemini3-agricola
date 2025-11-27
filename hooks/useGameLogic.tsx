@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES } from '../constants';
@@ -22,6 +21,7 @@ const INITIAL_PLAYERS: Player[] = Array.from({ length: 4 }, (_, i) => ({
     begging: 0,
     tempMode: null,
     harvestTemp: null,
+    pendingBreeding: null,
     assignedAnimals: {} 
 }));
 
@@ -37,6 +37,7 @@ export const useGameLogic = () => {
         deck: [],
         majors: [...DB_MAJORS],
         harvestPhase: false,
+        harvestSubPhase: null,
         harvestState: null,
         pendingAction: null,
         overflowQueue: []
@@ -47,19 +48,17 @@ export const useGameLogic = () => {
     const [isAdjustingAnimals, setIsAdjustingAnimals] = useState(false);
     
     // Refs for mutable access in timeouts/loops
+    // This is the SINGLE SOURCE OF TRUTH for logic execution
     const stateRef = useRef({ players: INITIAL_PLAYERS, gameState: gameState });
     
     // Concurrency / Loop Controls
     const initRef = useRef(false);
-    const roundLock = useRef(0); // Prevents duplicate endRound calls
-    const loggedRoundRef = useRef(1); // Prevents duplicate "Round Unlocked" logs
+    const roundLock = useRef(0);
+    const loggedRoundRef = useRef(1);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-    // Sync Ref with State
-    useEffect(() => {
-        stateRef.current.players = players;
-        stateRef.current.gameState = gameState;
-    }, [players, gameState]);
+    // REMOVED: The useEffect that synced state to ref to avoid race conditions.
+    // We update Ref manually in updaters below.
 
     const addLog = useCallback((msg: string, color: string = '#b0bec5') => {
         setLogs(prev => [{ id: Date.now() + Math.random(), msg, color }, ...prev].slice(0, 80));
@@ -81,27 +80,37 @@ export const useGameLogic = () => {
         }
     }, []);
 
-    // State Updaters
+    // --- CRITICAL STATE MANAGERS ---
+    // These functions update the Ref IMMEDIATELY (for logic) and State ASYNCHRONOUSLY (for UI)
+    
     const updatePlayer = (id: number, updater: (p: Player) => Player) => {
-        const newPlayers = stateRef.current.players.map(p => p.id === id ? updater({ ...p }) : p);
-        setPlayers(newPlayers);
+        // 1. Update Ref immediately
+        const currentPlayers = stateRef.current.players;
+        const newPlayers = currentPlayers.map(p => p.id === id ? updater({ ...p }) : p);
         stateRef.current.players = newPlayers;
+        
+        // 2. Schedule UI update
+        setPlayers(newPlayers);
     };
 
     const updateGameState = (updater: (g: GameState) => GameState) => {
-        const newState = updater({ ...stateRef.current.gameState });
-        setGameState(newState);
-        stateRef.current.gameState = newState;
+        // 1. Update Ref immediately
+        const currentGS = stateRef.current.gameState;
+        const newGS = updater({ ...currentGS });
+        stateRef.current.gameState = newGS;
+
+        // 2. Schedule UI update
+        setGameState(newGS);
     };
 
     // DEBUG HELPERS
     const debugSetState = (newGs: GameState) => {
-        setGameState(newGs);
         stateRef.current.gameState = newGs;
+        setGameState(newGs);
     };
     const debugSetPlayers = (newPs: Player[]) => {
-        setPlayers(newPs);
         stateRef.current.players = newPs;
+        setPlayers(newPs);
     };
     const debugForceAction = (actId: string) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
@@ -126,14 +135,14 @@ export const useGameLogic = () => {
         const deck = setupDeck();
         const sp = Math.floor(Math.random() * 4);
         const newGs: GameState = {
-            ...gameState,
+            ...stateRef.current.gameState,
             deck,
             startPlayer: sp,
             nextStartPlayer: sp,
             roundCards: deck.length > 0 ? [deck.shift()!] : []
         };
-        setGameState(newGs);
-        stateRef.current.gameState = newGs;
+        
+        updateGameState(() => newGs); // Init state
         addLog("🎮 Game Started!", "white");
         
         scheduleNext(() => nextTurn(), 500);
@@ -168,13 +177,22 @@ export const useGameLogic = () => {
         let loopGuard = 0;
 
         while (p.res.workers <= 0) {
-            gs.turnIdx++;
-            pIdx = (gs.startPlayer + gs.turnIdx) % 4;
+            gs.turnIdx++; // local var update
+            // We need to commit this skip to ref
+            const newTurnIdx = gs.turnIdx;
+            
+            pIdx = (gs.startPlayer + newTurnIdx) % 4;
             p = ps[pIdx];
             loopGuard++;
-            if(loopGuard > 10) { endRound(); return; }
+            if(loopGuard > 10) { 
+                // Commit the turn index before ending
+                updateGameState(prev => ({ ...prev, turnIdx: newTurnIdx }));
+                endRound(); 
+                return; 
+            }
         }
         
+        // Commit turn index change
         updateGameState(prev => ({ ...prev, turnIdx: gs.turnIdx }));
 
         if (p.type === 'ai') {
@@ -191,7 +209,9 @@ export const useGameLogic = () => {
         clearGameTimer();
         addLog(`=== End of Round ${gs.round} ===`, '#fff');
 
-        const newPlayers = ps.map(p => {
+        // Reset Workers directly on ref via updater
+        const currentPs = stateRef.current.players;
+        const newPlayers = currentPs.map(p => {
             let foodBonus = 0;
             if (p.majors.some(m => m.special === 'well')) foodBonus = 1;
             return {
@@ -199,8 +219,9 @@ export const useGameLogic = () => {
                 res: { ...p.res, workers: p.res.maxWorkers, food: p.res.food + foodBonus }
             };
         });
-        setPlayers(newPlayers);
+        // Batch update
         stateRef.current.players = newPlayers;
+        setPlayers(newPlayers);
 
         const allActions = [...BASE_ACTIONS, ...gs.roundCards];
         allActions.forEach(act => {
@@ -273,7 +294,6 @@ export const useGameLogic = () => {
         }
     };
 
-    // --- Actions ---
     const handleAIActionEffect = (p: Player, act: Action) => {
         if (stateRef.current.gameState.occupied[act.id] !== undefined) {
              addLog(`${p.name} bumped into occupied slot ${act.name}.`, 'red');
@@ -321,77 +341,110 @@ export const useGameLogic = () => {
         const newOccupied = { ...stateRef.current.gameState.occupied, [act.id]: p.id };
         updateGameState(prev => ({ ...prev, occupied: newOccupied }));
         
-        const allPlayers = [...stateRef.current.players];
-        allPlayers[p.id] = newP;
-        setPlayers(allPlayers);
-        stateRef.current.players = allPlayers;
+        // This helper handles ref update internally
+        updatePlayer(p.id, () => newP);
         
         updateGameState(prev => ({ ...prev, turnIdx: prev.turnIdx + 1 }));
         
         scheduleNext(() => nextTurn(), 500);
     };
 
-    // --- Harvest ---
-    const performHarvest = () => {
-        addLog(`🌾 --- Harvest Phase ---`, '#ff9800');
-        updateGameState(prev => ({ ...prev, harvestPhase: true }));
+    // ================= HARVEST LOGIC =================
 
+    const performHarvest = () => {
+        addLog(`🌾 --- HARVEST BEGINS ---`, '#ff9800');
+        updateGameState(prev => ({ 
+            ...prev, 
+            harvestPhase: true, 
+            harvestSubPhase: 'field' 
+        }));
+        
+        scheduleNext(() => processFieldPhase(), 500);
+    };
+
+    const processFieldPhase = () => {
+        // Batch update players manually to ref
         const ps = stateRef.current.players.map(p => {
             const newP = { ...p, res: { ...p.res }, farmCounts: [...p.farmCounts], farmContent: [...p.farmContent] };
+            let harvested = 0;
             for (let i = 0; i < 15; i++) {
                 if (newP.farm[i] === 2 && newP.farmCounts[i] > 0) {
                     const type = newP.farmContent[i]!;
                     newP.res[type]++;
                     newP.farmCounts[i]--;
                     if (newP.farmCounts[i] === 0) newP.farmContent[i] = null;
+                    harvested++;
                 }
+            }
+            if (harvested > 0) {
+                addLog(`${p.name} harvested crops from ${harvested} fields`, p.color);
             }
             return newP;
         });
-        setPlayers(ps);
         stateRef.current.players = ps;
+        setPlayers(ps);
 
+        addLog("🌾 Field Harvest Complete. Proceeding to Feeding...", '#ccc');
+        
         updateGameState(prev => ({
             ...prev,
+            harvestSubPhase: 'feed',
             harvestState: {
                 queue: Array.from({ length: 4 }, (_, i) => (prev.startPlayer + i) % 4),
                 currentIdx: 0
             }
         }));
-        
-        scheduleNext(() => processHarvestTurn(), 100);
+        scheduleNext(() => processFeedPhase(), 1000);
     };
 
-    const processHarvestTurn = () => {
-        try {
-            const { harvestState } = stateRef.current.gameState;
-            if (!harvestState || !harvestState.queue || harvestState.currentIdx >= harvestState.queue.length) {
-                finishHarvestPhase();
-                return;
-            }
-            
-            const pIdx = harvestState.queue[harvestState.currentIdx];
-            const p = stateRef.current.players[pIdx];
+    // FEED PHASE
+    const processFeedPhase = () => {
+        // Safe check for harvestState existence
+        if (!stateRef.current.gameState.harvestState) return;
 
-            if (!p) {
-                finishHarvestPhase();
-                return;
-            }
-
-            if (p.type === 'human') {
-                updatePlayer(p.id, pp => ({
-                    ...pp,
-                    harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 }
-                }));
-            } else {
-                aiHarvestFeed(p);
-            }
-
-        } catch (e) {
-            console.error("Harvest Error", e);
-            addLog("Harvest processing error. Skipping phase.", "red");
-            finishHarvestPhase();
+        const { harvestState } = stateRef.current.gameState;
+        
+        if (harvestState.currentIdx >= harvestState.queue.length) {
+            // Feeding Done -> Move to Breeding
+            addLog("🍲 Feeding Complete. Proceeding to Breeding...", '#ccc');
+            updateGameState(prev => ({
+                ...prev,
+                harvestSubPhase: 'breed',
+                harvestState: {
+                    queue: Array.from({ length: 4 }, (_, i) => (prev.startPlayer + i) % 4),
+                    currentIdx: 0
+                }
+            }));
+            scheduleNext(() => processBreedPhase(), 500);
+            return;
         }
+
+        const pIdx = harvestState.queue[harvestState.currentIdx];
+        const p = stateRef.current.players[pIdx];
+
+        if (p.type === 'human') {
+            updatePlayer(p.id, pp => ({
+                ...pp,
+                harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 }
+            }));
+        } else {
+            aiHarvestFeed(p);
+        }
+    };
+
+    const advanceFeedStep = () => {
+        if (!stateRef.current.gameState.harvestState) return; 
+        
+        // Critical: Use updateGameState to correctly update Ref AND State with new object
+        updateGameState(prev => {
+            const nextIdx = prev.harvestState!.currentIdx + 1;
+            return {
+                ...prev,
+                harvestState: { ...prev.harvestState!, currentIdx: nextIdx }
+            };
+        });
+        
+        processFeedPhase();
     };
 
     const aiHarvestFeed = (p: Player) => {
@@ -405,6 +458,21 @@ export const useGameLogic = () => {
         if (deficit > 0 && newP.res.veg > 0) { 
             const take = Math.min(newP.res.veg, deficit); newP.res.veg-=take; newP.res.food+=take; deficit-=take; 
         }
+        
+        const cooker = newP.majors.find(m => (m.type==='cook'||m.type==='bake') && m.cook);
+        if (deficit > 0 && cooker) {
+             ['sheep', 'boar', 'cow'].forEach(t => {
+                 // @ts-ignore
+                 while (deficit > 0 && newP.animals[t] > 0) { 
+                     // @ts-ignore
+                     newP.animals[t]--;
+                     // @ts-ignore
+                     newP.res.food += cooker.cook[t];
+                     // @ts-ignore
+                     deficit -= cooker.cook[t];
+                 }
+             });
+        }
 
         const pay = Math.min(newP.res.food, need);
         newP.res.food -= pay;
@@ -414,9 +482,118 @@ export const useGameLogic = () => {
         addLog(`${newP.name} fed workers (Begging: ${begging})`, newP.color);
         updatePlayer(p.id, () => newP);
 
-        scheduleNext(() => advanceHarvestStep(), 600);
+        scheduleNext(() => advanceFeedStep(), 600);
     };
 
+    // BREED PHASE
+    const processBreedPhase = () => {
+        // Safe check
+        if (!stateRef.current.gameState.harvestState) return;
+
+        const { harvestState } = stateRef.current.gameState;
+        if (harvestState.currentIdx >= harvestState.queue.length) {
+            // Harvest Done
+            addLog("👶 Breeding Complete. Harvest End.", '#fff');
+            updateGameState(prev => ({ ...prev, harvestPhase: false, harvestSubPhase: null, harvestState: null }));
+            advanceRound();
+            return;
+        }
+
+        const pIdx = harvestState.queue[harvestState.currentIdx];
+        const p = stateRef.current.players[pIdx];
+
+        const newborns = { sheep: 0, boar: 0, cow: 0 };
+        if (p.animals.sheep >= 2) newborns.sheep = 1;
+        if (p.animals.boar >= 2) newborns.boar = 1;
+        if (p.animals.cow >= 2) newborns.cow = 1;
+        
+        const hasNewborns = newborns.sheep + newborns.boar + newborns.cow > 0;
+
+        if (!hasNewborns) {
+            scheduleNext(() => advanceBreedStep(), 100);
+            return;
+        }
+
+        const simP = { ...p, animals: { 
+            sheep: p.animals.sheep + newborns.sheep,
+            boar: p.animals.boar + newborns.boar,
+            cow: p.animals.cow + newborns.cow
+        }};
+        const simAlloc = calculateAllocation(simP);
+        const willOverflow = simAlloc.overflow > 0;
+
+        if (p.type === 'human') {
+            updatePlayer(p.id, pp => ({
+                ...pp,
+                pendingBreeding: newborns,
+                harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 } 
+            }));
+        } else {
+            // AI Logic
+            if (willOverflow) {
+                const discarded = aiDiscardOverflow(simP, simAlloc.overflow);
+                simP.animals.sheep -= discarded.sheep;
+                simP.animals.boar -= discarded.boar;
+                simP.animals.cow -= discarded.cow;
+                addLog(`${p.name} bred animals but overflowed -${simAlloc.overflow}`, p.color);
+                updatePlayer(p.id, () => simP);
+            } else {
+                ['sheep', 'boar', 'cow'].forEach(t => {
+                    // @ts-ignore
+                    if (newborns[t]) addLog(`${p.name} bred 1 ${t}`, p.color);
+                });
+                updatePlayer(p.id, () => simP);
+            }
+            scheduleNext(() => advanceBreedStep(), 600);
+        }
+    };
+
+    const advanceBreedStep = () => {
+        if (!stateRef.current.gameState.harvestState) return;
+        
+        // Critical: Use updateGameState for correct ref sync
+        updateGameState(prev => {
+            const nextIdx = prev.harvestState!.currentIdx + 1;
+            return {
+                ...prev,
+                harvestState: { ...prev.harvestState!, currentIdx: nextIdx }
+            };
+        });
+        
+        processBreedPhase();
+    };
+
+    const resolveBreeding = (p: Player) => {
+        if (!p.pendingBreeding) return;
+        const newborns = p.pendingBreeding;
+        
+        const finalP = { ...p, animals: {
+            sheep: p.animals.sheep + newborns.sheep,
+            boar: p.animals.boar + newborns.boar,
+            cow: p.animals.cow + newborns.cow
+        }};
+
+        const alloc = calculateAllocation(finalP);
+        if (alloc.overflow > 0) {
+            const discarded = aiDiscardOverflow(finalP, alloc.overflow);
+            finalP.animals.sheep -= discarded.sheep;
+            finalP.animals.boar -= discarded.boar;
+            finalP.animals.cow -= discarded.cow;
+            addLog(`${p.name} processed breeding (Discarded ${alloc.overflow} overflow)`, p.color);
+        } else {
+            ['sheep', 'boar', 'cow'].forEach(t => {
+                // @ts-ignore
+                if (newborns[t]) addLog(`${p.name} bred 1 ${t}`, p.color);
+            });
+        }
+
+        finalP.pendingBreeding = null;
+        updatePlayer(p.id, () => finalP);
+
+        scheduleNext(() => advanceBreedStep(), 200);
+    };
+
+    // Shared Helpers
     const adjustHarvest = (key: keyof HarvestConversion, delta: number) => {
         const { harvestState } = stateRef.current.gameState;
         if (!harvestState) return;
@@ -441,7 +618,7 @@ export const useGameLogic = () => {
     };
 
     const confirmHarvest = () => {
-        const { harvestState } = stateRef.current.gameState;
+        const { harvestState, harvestSubPhase } = stateRef.current.gameState;
         if (!harvestState) return;
         const pIdx = harvestState.queue[harvestState.currentIdx];
         const p = stateRef.current.players[pIdx];
@@ -451,9 +628,7 @@ export const useGameLogic = () => {
         const t = p.harvestTemp;
         const cooker = p.majors.find(m => (m.type==='cook'||m.type==='bake') && m.cook);
         
-        let gain = t.grain; 
-        gain += t.veg;
-        
+        let gain = t.grain + t.veg;
         if (cooker && cooker.cook) {
             gain += t.sheep * cooker.cook.sheep;
             gain += t.boar * cooker.cook.boar;
@@ -461,66 +636,30 @@ export const useGameLogic = () => {
         }
 
         const newP = { ...p, res: { ...p.res }, animals: { ...p.animals } };
-        
         newP.res.grain -= t.grain; newP.res.veg -= t.veg;
         newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow;
         newP.res.food += gain;
-
-        const need = newP.res.maxWorkers * 2;
-        const pay = Math.min(newP.res.food, need);
-        newP.res.food -= pay;
-        const begging = need - pay;
-        if (begging > 0) newP.begging += begging;
-
+        
         newP.harvestTemp = null; 
 
-        addLog(`${newP.name} converted +${gain} food & fed workers (Begging: ${begging})`, newP.color);
-        updatePlayer(pIdx, () => newP);
-
-        scheduleNext(() => advanceHarvestStep(), 200);
+        if (harvestSubPhase === 'feed') {
+            const need = newP.res.maxWorkers * 2;
+            const pay = Math.min(newP.res.food, need);
+            newP.res.food -= pay;
+            const begging = need - pay;
+            if (begging > 0) newP.begging += begging;
+            addLog(`${newP.name} fed workers (Converted +${gain} food)`, newP.color);
+            
+            updatePlayer(pIdx, () => newP);
+            scheduleNext(() => advanceFeedStep(), 200);
+        }
+        else if (harvestSubPhase === 'breed') {
+            addLog(`${newP.name} converted animals to food (+${gain}) to make room`, newP.color);
+            resolveBreeding(newP); 
+        }
     };
 
-    const advanceHarvestStep = () => {
-         updateGameState(prev => ({
-            ...prev,
-            harvestState: { ...prev.harvestState!, currentIdx: prev.harvestState!.currentIdx + 1 }
-        }));
-        processHarvestTurn();
-    };
-
-    const finishHarvestPhase = () => {
-        const ps = stateRef.current.players.map(p => ({...p}));
-        
-        ps.forEach(p => {
-             // Breeding
-             ['sheep', 'boar', 'cow'].forEach(type => {
-                 // @ts-ignore
-                if(p.animals[type] >= 2) {
-                    // @ts-ignore
-                    p.animals[type]++;
-                    addLog(`${p.name} bred 1 ${type}`, p.color);
-                }
-            });
-
-            // Overflow logic
-            const alloc = calculateAllocation(p);
-            if(alloc.overflow > 0) {
-                const discarded = aiDiscardOverflow(p, alloc.overflow);
-                p.animals.sheep -= discarded.sheep;
-                p.animals.boar -= discarded.boar;
-                p.animals.cow -= discarded.cow;
-                addLog(`${p.name} overflow -${alloc.overflow} animals`, p.color);
-            }
-        });
-        
-        setPlayers(ps);
-        stateRef.current.players = ps;
-        
-        updateGameState(prev => ({ ...prev, harvestPhase: false, harvestState: null, overflowQueue: [] }));
-        advanceRound();
-    };
-
-    // --- Anytime Food Conversion ---
+    // --- Anytime Conversion ---
     const toggleConversion = () => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         const pIdx = (startPlayer + turnIdx) % 4;
@@ -558,9 +697,7 @@ export const useGameLogic = () => {
         const t = p.conversionTemp;
         const cooker = p.majors.find(m => (m.type==='cook'||m.type==='bake') && m.cook);
         
-        let gain = t.grain; 
-        gain += t.veg; 
-        
+        let gain = t.grain + t.veg; 
         if (cooker && cooker.cook) {
             gain += t.sheep * cooker.cook.sheep;
             gain += t.boar * cooker.cook.boar;
@@ -667,7 +804,6 @@ export const useGameLogic = () => {
              let isValid = true;
              let errMsg = "";
              
-             // Important: Reset animal assignments if farm structure changes to prevent bugs
              let farmStructureChanged = false;
 
              const countType = (pl: any, t: number) => pl.farm.filter((x:number) => x===t).length;
@@ -710,9 +846,6 @@ export const useGameLogic = () => {
                      if (countType(p, 2) <= countType(oldP, 2)) {
                          isValid = false; errMsg = "Must plow at least one field!";
                      } else {
-                        // Plowing *can* technically affect farm layout if it overwrites something, 
-                        // but usually it overwrites empty. 
-                        // Safest to clear assignments if we touched the grid.
                         farmStructureChanged = true;
                      }
                      if (isValid && !validateFenceRules(p)) {
@@ -793,7 +926,6 @@ export const useGameLogic = () => {
                      addLog(`${p.name} completed ${p.tempMode.mode}`, p.color);
                  }
                  
-                 // Clear assignments if structure changed
                  if (farmStructureChanged) {
                      updatePlayer(pId, pp => ({ ...pp, assignedAnimals: {} }));
                  }
@@ -807,72 +939,6 @@ export const useGameLogic = () => {
          updateGameState(prev => ({ ...prev, turnIdx: prev.turnIdx + 1 }));
          
          scheduleNext(() => nextTurn(), 500);
-    };
-
-    // UI Helpers for complex actions
-    const switchTool = (tool: 'room'|'stable') => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
-        updatePlayer(pIdx, p => p.tempMode ? ({...p, tempMode: {...p.tempMode, currentTool: tool}}) : p);
-    };
-
-    const toggleSeed = (seed: 'grain' | 'veg') => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
-        updatePlayer(pIdx, p => p.tempMode ? ({...p, tempMode: {...p.tempMode!, currentSeed: seed}}) : p);
-    };
-
-    const selectMajor = (majorId: string) => {
-        const { startPlayer, turnIdx, pendingAction } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
-        const p = stateRef.current.players[pIdx];
-
-        if (p.tempMode?.mode === 'reno_major' && pendingAction) {
-             const oldP = JSON.parse(pendingAction.snapshot);
-             if (p.houseType === oldP.houseType) {
-                 addLog("Must successfully renovate house before selecting a Major Improvement", "red");
-                 return;
-             }
-        }
-
-        const newSelectedId = p.tempMode?.selectedMajorId === majorId ? undefined : majorId;
-
-        if (newSelectedId) {
-            const major = stateRef.current.gameState.majors.find(m => m.id === newSelectedId);
-            if (major) {
-                const cost = major.cost;
-                if (p.res.wood < (cost.wood||0) || p.res.clay < (cost.clay||0) || p.res.reed < (cost.reed||0) || p.res.stone < (cost.stone||0)) {
-                    addLog("Not enough resources to select this card", "red");
-                    return;
-                }
-            }
-        }
-        
-        updatePlayer(pIdx, pp => ({
-            ...pp,
-            tempMode: { ...pp.tempMode!, selectedMajorId: newSelectedId }
-        }));
-    };
-
-    const renovate = () => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const p = stateRef.current.players[(startPlayer + turnIdx) % 4];
-        if (p.houseType === 'stone') return;
-
-        const rooms = p.farm.filter(t => t === 1).length;
-        let costType = p.houseType === 'wood' ? 'clay' : 'stone';
-        // @ts-ignore
-        if (p.res.reed < 1 || p.res[costType] < rooms) {
-             addLog(`Need 1 Reed + ${rooms} ${costType}`, "red");
-             return;
-        }
-
-        updatePlayer(p.id, pp => ({
-            ...pp,
-            res: { ...pp.res, reed: pp.res.reed - 1, [costType]: (pp.res as any)[costType] - rooms },
-            houseType: p.houseType === 'wood' ? 'clay' : 'stone'
-        }));
-        addLog(`${p.name} renovated`, p.color);
     };
 
     const handleFarmClick = (pId: number, tileIdx: number) => {
@@ -1014,9 +1080,7 @@ export const useGameLogic = () => {
     const handleFenceClick = (pId: number, tileIdx: number, side: 't'|'b'|'l'|'r') => {
         const p = stateRef.current.players[pId];
         if (p.type !== 'human' || !p.tempMode) return;
-        
-        const mode = p.tempMode.mode;
-        if (mode !== 'fence' && mode !== 'reno_fence') return;
+        if (p.tempMode.mode !== 'fence' && p.tempMode.mode !== 'reno_fence') return;
 
         let key = `${tileIdx}-${side}`;
         if (side === 'r') {
@@ -1062,13 +1126,80 @@ export const useGameLogic = () => {
         });
     };
     
+    // Explicitly definition of switchTool at the top level of the hook scope
+    const switchTool = (tool: 'room'|'stable') => {
+        const { startPlayer, turnIdx } = stateRef.current.gameState;
+        const pIdx = (startPlayer + turnIdx) % 4;
+        updatePlayer(pIdx, p => p.tempMode ? ({...p, tempMode: {...p.tempMode, currentTool: tool}}) : p);
+    };
+
+    const toggleSeed = (seed: 'grain' | 'veg') => {
+        const { startPlayer, turnIdx } = stateRef.current.gameState;
+        const pIdx = (startPlayer + turnIdx) % 4;
+        updatePlayer(pIdx, p => p.tempMode ? ({...p, tempMode: {...p.tempMode!, currentSeed: seed}}) : p);
+    };
+
+    const selectMajor = (majorId: string) => {
+        const { startPlayer, turnIdx, pendingAction } = stateRef.current.gameState;
+        const pIdx = (startPlayer + turnIdx) % 4;
+        const p = stateRef.current.players[pIdx];
+
+        if (p.tempMode?.mode === 'reno_major' && pendingAction) {
+             const oldP = JSON.parse(pendingAction.snapshot);
+             if (p.houseType === oldP.houseType) {
+                 addLog("Must successfully renovate house before selecting a Major Improvement", "red");
+                 return;
+             }
+        }
+
+        const newSelectedId = p.tempMode?.selectedMajorId === majorId ? undefined : majorId;
+
+        if (newSelectedId) {
+            const major = stateRef.current.gameState.majors.find(m => m.id === newSelectedId);
+            if (major) {
+                const cost = major.cost;
+                if (p.res.wood < (cost.wood||0) || p.res.clay < (cost.clay||0) || p.res.reed < (cost.reed||0) || p.res.stone < (cost.stone||0)) {
+                    addLog("Not enough resources to select this card", "red");
+                    return;
+                }
+            }
+        }
+        
+        updatePlayer(pIdx, pp => ({
+            ...pp,
+            tempMode: { ...pp.tempMode!, selectedMajorId: newSelectedId }
+        }));
+    };
+
+    const renovate = () => {
+        const { startPlayer, turnIdx } = stateRef.current.gameState;
+        const p = stateRef.current.players[(startPlayer + turnIdx) % 4];
+        if (p.houseType === 'stone') return;
+
+        const rooms = p.farm.filter(t => t === 1).length;
+        let costType = p.houseType === 'wood' ? 'clay' : 'stone';
+        // @ts-ignore
+        if (p.res.reed < 1 || p.res[costType] < rooms) {
+             addLog(`Need 1 Reed + ${rooms} ${costType}`, "red");
+             return;
+        }
+
+        updatePlayer(p.id, pp => ({
+            ...pp,
+            res: { ...pp.res, reed: pp.res.reed - 1, [costType]: (pp.res as any)[costType] - rooms },
+            houseType: p.houseType === 'wood' ? 'clay' : 'stone'
+        }));
+        addLog(`${p.name} renovated`, p.color);
+    };
+    
     const openCardDetail = (card: MajorCard) => setViewingCard(card);
     const closeCardDetail = () => setViewingCard(null);
 
     return {
         gameState, players, logs, floatText,
         clickAction, cancelMode, handleFarmClick, handleFenceClick, confirmModeAction,
-        switchTool, toggleSeed, selectMajor, renovate,
+        switchTool, // Explicitly returned
+        toggleSeed, selectMajor, renovate,
         viewingCard, openCardDetail, closeCardDetail,
         adjustHarvest, resetHarvest, confirmHarvest,
         toggleConversion, adjustConversion, confirmConversion,

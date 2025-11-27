@@ -8,6 +8,7 @@ import ScoringTable from './components/ScoringTable';
 import RoundTracker from './components/RoundTracker';
 import TestPanel from './components/TestPanel';
 import AnimalManager from './components/AnimalManager';
+import { calculateAllocation } from './utils/gameLogic';
 
 const App: React.FC = () => {
   const { 
@@ -16,7 +17,7 @@ const App: React.FC = () => {
     logs, 
     clickAction, 
     cancelMode, 
-    handleFarmClick,
+    handleFarmClick, 
     handleFenceClick, 
     confirmModeAction,
     switchTool,
@@ -189,8 +190,8 @@ const App: React.FC = () => {
         {/* Left: Board */}
         <div className="w-[440px] flex flex-col gap-2 bg-board-bg p-3 rounded-lg shadow-2xl border-4 border-stone-900">
           
-          <div className="text-xs text-stone-300 uppercase tracking-widest border-b border-stone-700 pb-1 mb-1 mt-2 flex justify-between">
-            <span>Base Actions</span>
+          <div className="text-xs text-stone-300 uppercase tracking-widest border-b border-stone-700 pb-1 mb-1 mt-2">
+            Base Actions
           </div>
           <div className="grid grid-cols-2 gap-1.5">
             {BASE_ACTIONS.map(act => (
@@ -225,7 +226,7 @@ const App: React.FC = () => {
                   <div key={m.id} className="bg-orange-700 text-white p-2 rounded text-xs border border-orange-500 shadow opacity-80 cursor-help" onClick={() => openCardDetail(m)}>
                       {m.name} <br/>
                       <span className="text-[10px] opacity-75">
-                          {JSON.stringify(m.cost).replace(/["{}]/g, '').replace(/:/g, '')}
+                          {JSON.stringify(m.cost).replace(/["{}]/g, '').replace(/:/g, ' ')}
                       </span>
                   </div>
               ))}
@@ -286,19 +287,26 @@ const App: React.FC = () => {
       {isHumanHarvest && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
              <div className="bg-slate-800 border-2 border-orange-500 p-6 rounded-lg max-w-lg w-full shadow-2xl relative text-white">
-                 <h2 className="text-2xl font-bold text-orange-400 mb-4 text-center">🌾 Harvest Feeding Phase</h2>
+                 
+                 {/* Title Dynamic based on Phase */}
+                 <h2 className="text-2xl font-bold text-orange-400 mb-4 text-center">
+                     {gameState.harvestSubPhase === 'feed' ? '🍲 Harvest: Feed Workers' : '👶 Harvest: Animal Breeding'}
+                 </h2>
                  
                  {(() => {
                      const p = activePlayer;
                      const t = p.harvestTemp!;
                      const cooker = p.majors.find(m => (m.type==='cook'||m.type==='bake') && m.cook);
                      
+                     // 1. Calculate Conversions
                      let gain = t.grain + t.veg;
                      if (cooker) {
                         gain += t.sheep * (cooker.cook?.sheep||0);
                         gain += t.boar * (cooker.cook?.boar||0);
                         gain += t.cow * (cooker.cook?.cow||0);
                      }
+
+                     // 2. Display Logic based on Phase
                      const totalFood = p.res.food + gain;
                      const needed = p.res.maxWorkers * 2;
                      const balance = totalFood - needed;
@@ -306,18 +314,54 @@ const App: React.FC = () => {
 
                      return (
                         <div className="space-y-4">
-                            <div className="bg-slate-900 p-3 rounded text-center border border-slate-700">
-                                <div className="text-sm text-gray-400">Required: <span className="text-white font-bold">{needed}</span></div>
-                                <div className="text-lg">
-                                    Current Food: {p.res.food} <span className="text-green-400">+{gain}</span> = 
-                                    <span className={`font-bold ml-1 ${balanceColor}`}>{totalFood}</span>
+                            {/* STATUS PANEL */}
+                            {gameState.harvestSubPhase === 'feed' && (
+                                <div className="bg-slate-900 p-3 rounded text-center border border-slate-700">
+                                    <div className="text-sm text-gray-400">Required: <span className="text-white font-bold">{needed}</span></div>
+                                    <div className="text-lg">
+                                        Current Food: {p.res.food} <span className="text-green-400">+{gain}</span> = 
+                                        <span className={`font-bold ml-1 ${balanceColor}`}>{totalFood}</span>
+                                    </div>
+                                    {balance < 0 && <div className="text-red-500 text-sm font-bold mt-1">⚠️ Will take {Math.abs(balance)} Begging Cards</div>}
                                 </div>
-                                {balance < 0 && <div className="text-red-500 text-sm font-bold mt-1">⚠️ Will take {Math.abs(balance)} Begging Cards</div>}
-                            </div>
+                            )}
 
+                            {gameState.harvestSubPhase === 'breed' && (() => {
+                                // Simulate final animals to check capacity
+                                const nb = p.pendingBreeding || { sheep: 0, boar: 0, cow: 0 };
+                                const finalAnimals = {
+                                    sheep: p.animals.sheep + nb.sheep - t.sheep,
+                                    boar: p.animals.boar + nb.boar - t.boar,
+                                    cow: p.animals.cow + nb.cow - t.cow
+                                };
+                                // Quick alloc check
+                                const simP = { ...p, animals: finalAnimals };
+                                const alloc = calculateAllocation(simP);
+                                const isOverflow = alloc.overflow > 0;
+
+                                return (
+                                    <div className="bg-slate-900 p-3 rounded text-center border border-slate-700">
+                                        <div className="text-sm text-gray-400 mb-1">Newborns:</div>
+                                        <div className="flex justify-center gap-2 mb-2">
+                                            {nb.sheep > 0 && <span className="text-blue-300">+{nb.sheep} 🐑</span>}
+                                            {nb.boar > 0 && <span className="text-amber-600">+{nb.boar} 🐗</span>}
+                                            {nb.cow > 0 && <span className="text-stone-400">+{nb.cow} 🐮</span>}
+                                            {!nb.sheep && !nb.boar && !nb.cow && <span className="text-gray-500">None</span>}
+                                        </div>
+                                        <div className={`text-lg font-bold ${isOverflow ? 'text-red-400' : 'text-green-400'}`}>
+                                            {isOverflow ? `⚠️ Overflow: -${alloc.overflow} animals will be discarded` : "✅ All animals fit!"}
+                                        </div>
+                                        <div className="text-xs text-gray-500 mt-1">
+                                            Tip: Cook existing animals to make room for newborns.
+                                        </div>
+                                    </div>
+                                );
+                            })()}
+
+                            {/* CONTROLS */}
                             <div className="grid grid-cols-2 gap-4">
-                                {/* Crops */}
-                                <div className="space-y-2">
+                                {/* Crops - Only relevant in Feed phase essentially, but allowed in Breed if user wants extra food */}
+                                <div className="space-y-2 opacity-80 hover:opacity-100 transition-opacity">
                                     <h4 className="text-xs uppercase font-bold text-gray-500">Convert Crops (1:1)</h4>
                                     <div className="flex justify-between items-center bg-slate-700 p-2 rounded">
                                         <span>🌾 Grain ({p.res.grain})</span>
@@ -339,7 +383,7 @@ const App: React.FC = () => {
 
                                 {/* Animals */}
                                 <div className="space-y-2">
-                                    <h4 className="text-xs uppercase font-bold text-gray-500">Cook Animals {cooker ? '(Available)' : '(No Fireplace)'}</h4>
+                                    <h4 className="text-xs uppercase font-bold text-gray-500">Cook Animals {cooker ? '' : '(No Fireplace)'}</h4>
                                     {['sheep', 'boar', 'cow'].map(type => {
                                         const rate = cooker?.cook?.[type as 'sheep'|'boar'|'cow'] || 0;
                                         return (
@@ -365,7 +409,9 @@ const App: React.FC = () => {
                             </div>
 
                             <div className="flex gap-4 mt-6 pt-4 border-t border-slate-600">
-                                <button onClick={confirmHarvest} className="flex-1 bg-green-600 hover:bg-green-500 py-2 rounded font-bold shadow-lg">Confirm Strategy</button>
+                                <button onClick={confirmHarvest} className="flex-1 bg-green-600 hover:bg-green-500 py-2 rounded font-bold shadow-lg">
+                                    {gameState.harvestSubPhase === 'feed' ? 'Confirm Feeding' : 'Confirm Breeding & Discard Excess'}
+                                </button>
                                 <button onClick={resetHarvest} className="flex-1 bg-gray-600 hover:bg-gray-500 py-2 rounded font-bold shadow-lg">Reset</button>
                             </div>
                         </div>
@@ -465,7 +511,11 @@ const App: React.FC = () => {
       {gameState.harvestPhase && !isHumanHarvest && (
           <div className="fixed top-20 right-10 bg-orange-900/90 text-white px-6 py-4 rounded-xl shadow-2xl border-2 border-orange-500 z-50 animate-pulse">
               <h3 className="text-xl font-bold">🌾 Harvest Phase</h3>
-              <p>Feeding workers... {activePlayer.name}</p>
+              <p>
+                  {gameState.harvestSubPhase === 'field' ? 'Harvesting Crops...' :
+                   gameState.harvestSubPhase === 'feed' ? `Feeding workers... ${activePlayer.name}` :
+                   `Breeding animals... ${activePlayer.name}`}
+              </p>
           </div>
       )}
 

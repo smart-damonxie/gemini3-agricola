@@ -1,4 +1,3 @@
-
 import { Allocation, FarmLayout, Player, ResourceType } from "../types";
 import { SCORING_TIERS } from "../constants";
 
@@ -13,12 +12,12 @@ export const analyzeFarmLayout = (p: Player): FarmLayout => {
     const singles: { idx: number; type: 'house'|'stable'; capacity: number }[] = [];
     const houseTiles = p.farm.map((t, i) => t === 1 ? i : -1).filter(i => i !== -1);
     
-    // Each room is treated individually for "Flexible" placement, 
-    // though strict rules usually say 1 pet per house. 
-    // We list them as individual slots of capacity 1 for the allocator.
-    houseTiles.forEach(idx => {
-         singles.push({ idx, type: 'house', capacity: 1 });
-    });
+    // Fix: House Capacity Rule.
+    // Regardless of the number of rooms, a house can only hold 1 animal (pet).
+    // We assign this capacity to the first room found.
+    if (houseTiles.length > 0) {
+         singles.push({ idx: houseTiles[0], type: 'house', capacity: 1 });
+    }
 
     const visited = new Set<number>();
     const pastures: { capacity: number; tiles: number[]; assignedType?: string }[] = [];
