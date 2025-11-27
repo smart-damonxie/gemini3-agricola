@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS } from './constants';
@@ -43,7 +42,13 @@ const App: React.FC = () => {
   const [showScoring, setShowScoring] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
 
-  const activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
+  // Critical Fix: Correctly identify the active player during Harvest phase
+  // In normal play, it's determined by turnIdx.
+  // In harvest, it's determined by the harvestState queue.
+  let activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
+  if (gameState.harvestPhase && gameState.harvestState) {
+      activePlayer = players[gameState.harvestState.queue[gameState.harvestState.currentIdx]];
+  }
 
   // Helper to find action name for simple mode
   const getActionDetails = (actId: string) => {
