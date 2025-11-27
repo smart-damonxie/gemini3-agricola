@@ -45,6 +45,8 @@ export interface HarvestConversion {
   cow: number;
 }
 
+export type HarvestSubPhase = 'field' | 'feed' | 'breed' | null;
+
 export interface Player {
   id: number;
   name: string;
@@ -78,6 +80,8 @@ export interface Player {
   harvestTemp: HarvestConversion | null; 
   conversionTemp?: HarvestConversion | null; // For anytime conversion
   overflowTemp?: any;
+  pendingBreeding: { sheep: number, boar: number, cow: number } | null;
+  assignedAnimals: { [key: number]: ResourceType[] };
 }
 
 export interface TempMode {
@@ -102,6 +106,7 @@ export interface GameState {
   deck: Action[];
   majors: MajorCard[];
   harvestPhase: boolean;
+  harvestSubPhase: HarvestSubPhase;
   harvestState: { queue: number[]; currentIdx: number } | null;
   pendingAction: { pIdx: number; timer: any; snapshot: string; flags: any } | null;
   overflowQueue: any[];
