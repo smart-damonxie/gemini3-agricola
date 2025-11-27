@@ -78,6 +78,7 @@ export interface Player {
   harvestTemp: HarvestConversion | null; 
   conversionTemp?: HarvestConversion | null;
   overflowTemp?: any;
+  assignedAnimals: { [key: number]: ResourceType[] }; // Manual override: tileIdx -> list of animals
 }
 
 export interface TempMode {

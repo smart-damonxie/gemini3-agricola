@@ -7,6 +7,7 @@ import PlayerPanel from './components/PlayerPanel';
 import ScoringTable from './components/ScoringTable';
 import RoundTracker from './components/RoundTracker';
 import TestPanel from './components/TestPanel';
+import AnimalManager from './components/AnimalManager';
 
 const App: React.FC = () => {
   const { 
@@ -31,6 +32,9 @@ const App: React.FC = () => {
     toggleConversion,
     adjustConversion,
     confirmConversion,
+    isAdjustingAnimals,
+    toggleAnimalManager,
+    saveAnimalAssignment,
     debug
   } = useGameLogic();
 
@@ -49,6 +53,7 @@ const App: React.FC = () => {
   const isConverting = activePlayer.type === 'human' && activePlayer.conversionTemp;
   const isHumanTurn = activePlayer.type === 'human' && !gameState.harvestPhase;
   const actionDetails = activePlayer.tempMode ? getActionDetails(activePlayer.tempMode.actId) : null;
+  const humanPlayer = players.find(p => p.type === 'human');
 
   return (
     <div className="flex flex-col items-center p-2 max-w-[1600px] mx-auto pb-20">
@@ -241,6 +246,7 @@ const App: React.FC = () => {
                  onFenceClick={(tile, side) => handleFenceClick(p.id, tile, side)}
                  onMajorClick={openCardDetail}
                  onConvertClick={p.type === 'human' ? toggleConversion : undefined}
+                 onAdjustClick={p.type === 'human' ? toggleAnimalManager : undefined}
               />
            ))}
         </div>
@@ -257,6 +263,15 @@ const App: React.FC = () => {
 
       {/* Scoring Modal */}
       {showScoring && <ScoringTable onClose={() => setShowScoring(false)} />}
+
+      {/* Animal Manager */}
+      {isAdjustingAnimals && humanPlayer && (
+        <AnimalManager 
+            player={humanPlayer} 
+            onClose={toggleAnimalManager} 
+            onSave={saveAnimalAssignment} 
+        />
+      )}
 
       {/* Test Panel */}
       <TestPanel 

@@ -12,9 +12,14 @@ export const getTierScore = (category: string, count: number): number => {
 export const analyzeFarmLayout = (p: Player): FarmLayout => {
     const singles: { idx: number; type: 'house'|'stable'; capacity: number }[] = [];
     const houseTiles = p.farm.map((t, i) => t === 1 ? i : -1).filter(i => i !== -1);
-    if (houseTiles.length > 0) {
-        singles.push({ idx: houseTiles[0], type: 'house', capacity: 1 });
-    }
+    
+    // Each room is treated individually for "Flexible" placement, 
+    // though strict rules usually say 1 pet per house. 
+    // We list them as individual slots of capacity 1 for the allocator.
+    houseTiles.forEach(idx => {
+         singles.push({ idx, type: 'house', capacity: 1 });
+    });
+
     const visited = new Set<number>();
     const pastures: { capacity: number; tiles: number[]; assignedType?: string }[] = [];
     
@@ -101,6 +106,36 @@ export const calculateScore = (p: Player): number => {
 export const getAniIcon = (type: string) => type === 'sheep' ? '🐑' : (type === 'boar' ? '🐗' : '🐮');
 
 export const calculateAllocation = (p: Player): Allocation => {
+    // If Manual Assignment exists, use it exclusively
+    if (p.assignedAnimals && Object.keys(p.assignedAnimals).length > 0) {
+        const distribution: { icon: string; type: string }[][] = Array(15).fill(null).map(() => []);
+        const used = { sheep: 0, boar: 0, cow: 0 };
+
+        Object.entries(p.assignedAnimals).forEach(([key, list]) => {
+            const idx = parseInt(key);
+            if (idx >= 0 && idx < 15) {
+                list.forEach(type => {
+                     distribution[idx].push({ icon: getAniIcon(type), type: 'ani' });
+                     if (type === 'sheep') used.sheep++;
+                     else if (type === 'boar') used.boar++;
+                     else if (type === 'cow') used.cow++;
+                });
+            }
+        });
+
+        // Calculate Overflow (Unassigned animals)
+        // If we assigned MORE than we have (which shouldn't happen with UI checks but possible in logic),
+        // we essentially just show what's assigned. 
+        // Real overflow is Max(0, Owned - Assigned).
+        let overflow = 0;
+        overflow += Math.max(0, p.animals.sheep - used.sheep);
+        overflow += Math.max(0, p.animals.boar - used.boar);
+        overflow += Math.max(0, p.animals.cow - used.cow);
+
+        return { distribution, overflow };
+    }
+
+    // Default Auto-Allocation
     const layout = analyzeFarmLayout(p);
     const animalGroups = [
         { type: 'sheep', count: p.animals.sheep, remaining: 0 },
@@ -108,12 +143,16 @@ export const calculateAllocation = (p: Player): Allocation => {
         { type: 'cow', count: p.animals.cow, remaining: 0 }
     ];
     animalGroups.sort((a, b) => b.count - a.count);
-    layout.pastures.sort((a, b) => b.capacity - a.capacity);
+    
+    // Sort pastures by capacity to optimize large herds
+    // Clone to avoid mutating the analysis result if used elsewhere (though it's fresh here)
+    const sortedPastures = [...layout.pastures].sort((a, b) => b.capacity - a.capacity);
+    
     const distribution: { icon: string; type: string }[][] = Array(15).fill(null).map(() => []);
 
     animalGroups.forEach(group => {
         let count = group.count;
-        for (const pas of layout.pastures) {
+        for (const pas of sortedPastures) {
             if (count <= 0) break;
             if (pas.assignedType) continue;
             pas.assignedType = group.type;

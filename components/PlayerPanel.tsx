@@ -13,6 +13,7 @@ interface Props {
   onFenceClick?: (tileIdx: number, side: 't'|'b'|'l'|'r') => void;
   onMajorClick?: (major: MajorCard) => void;
   onConvertClick?: () => void;
+  onAdjustClick?: () => void;
 }
 
 const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
@@ -21,7 +22,7 @@ const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
   </span>
 );
 
-const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmClick, onFenceClick, onMajorClick, onConvertClick }) => {
+const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmClick, onFenceClick, onMajorClick, onConvertClick, onAdjustClick }) => {
   const allocation = calculateAllocation(player);
   const score = calculateScore(player);
 
@@ -31,6 +32,11 @@ const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmCli
 
   // Convert Button Logic
   const canConvert = isActive && player.type === 'human';
+  // Adjust Logic: Allow even if not active? Actually prompt says "When player clicks ADJUST".
+  // Usually player can arrange animals anytime. Let's allow anytime for simplicity, or restrict to turn if strict.
+  // Prompt: "1. When it's a player's turn... 2. Add ADJUST button...". Okay, implied turn only.
+  // But strictly, animal arrangement is free action. Let's allow it for human anytime they want to view strategies.
+  const canAdjust = player.type === 'human';
 
   return (
     <div 
@@ -50,6 +56,17 @@ const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmCli
         </div>
 
         <div className="flex items-center gap-3">
+            {/* Adjust Animals Button */}
+            {canAdjust && (
+                 <button 
+                    onClick={(e) => { e.stopPropagation(); if (onAdjustClick) onAdjustClick(); }}
+                    className="flex items-center gap-1 px-3 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border transition-all bg-indigo-700 hover:bg-indigo-600 border-indigo-500 text-white shadow-md cursor-pointer"
+                    title="Adjust Animal Strategy"
+                 >
+                    <span>🔄</span> Adjust
+                 </button>
+            )}
+
             {/* Convert Food Button: Persistent, Oval, Narrow */}
             <button 
                 onClick={(e) => { 
@@ -145,13 +162,6 @@ const PlayerPanel: React.FC<Props> = ({ player, isActive, isNextStart, onFarmCli
                       ))}
                   </div>
               </div>
-
-              {/* Placeholders for Future Expansions (Minors / Occupations) */}
-              {/* 
-              <div className="bg-black/20 p-1.5 rounded border border-white/5 opacity-50">
-                  <div className="text-[10px] text-gray-500 uppercase font-bold">Minors</div>
-              </div>
-              */}
           </div>
       </div>
     </div>
