@@ -1,421 +1,393 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import { GameState, Player, Action } from '../types';
+import React, { useState, useEffect } from 'react';
+import { Player, Action, ResourceType } from '../types';
 import { BASE_ACTIONS, ROUND_CARDS_POOL } from '../constants';
+import PlayerPanel from './PlayerPanel';
 
 interface TestCase {
     id: string;
     name: string;
     actionId: string;
-    expectJson: string; // e.g. '{"res.wood": 3}'
-    status: 'idle' | 'running' | 'pass' | 'fail';
+    type: 'auto' | 'interactive';
+    setupResources?: Partial<Player['res']>;
+    setupType?: string; 
+    expectJson: string; 
+    status: 'idle' | 'waiting' | 'pass' | 'fail';
     resultMsg?: string;
 }
 
 interface Props {
     isOpen: boolean;
     onClose: () => void;
-    gameState: GameState;
-    players: Player[];
-    debug: {
-        setGameState: (gs: GameState) => void;
-        setPlayers: (ps: Player[]) => void;
-        forceAction: (actId: string) => void;
-        stateRef: React.MutableRefObject<any>;
-    };
+    // Decoupled from main game state
+    gameState?: any; 
+    players?: any;
+    debug?: any;
 }
 
-const TestPanel: React.FC<Props> = ({ isOpen, onClose, gameState, players, debug }) => {
-    const [activeTab, setActiveTab] = useState<'control' | 'cases'>('cases');
-    const [testCases, setTestCases] = useState<TestCase[]>([]);
-    const [runningTest, setRunningTest] = useState<{ id: string; snapshot: Player } | null>(null);
-    const fileInputRef = useRef<HTMLInputElement>(null);
+const TEST_PLAYER_TEMPLATE: Player = {
+    id: 99,
+    name: "Test Agent",
+    color: "#a855f7", 
+    type: 'human',
+    res: { wood: 0, clay: 0, reed: 0, stone: 0, food: 0, grain: 0, veg: 0, workers: 2, maxWorkers: 2 },
+    animals: { sheep: 0, boar: 0, cow: 0 },
+    farm: Array(15).fill(0).map((_, idx) => (idx === 5 || idx === 10) ? 1 : 0),
+    farmCounts: Array(15).fill(0),
+    farmContent: Array(15).fill(null),
+    fences: new Set(),
+    stablesCount: 0,
+    houseType: 'wood',
+    majors: [],
+    begging: 0,
+    tempMode: null,
+    harvestTemp: null,
+    pendingBreeding: null,
+    assignedAnimals: {}
+};
 
-    // Initialize Test Cases if empty
+const TestPanel: React.FC<Props> = ({ isOpen, onClose }) => {
+    const [testCases, setTestCases] = useState<TestCase[]>([]);
+    
+    // FIX 1: Initialize with Set correctly. JSON.parse converts Set to {}, so we fix it immediately.
+    const [localPlayer, setLocalPlayer] = useState<Player>(() => {
+        const p = JSON.parse(JSON.stringify(TEST_PLAYER_TEMPLATE));
+        p.fences = new Set();
+        return p;
+    });
+
+    const [activeTestId, setActiveTestId] = useState<string | null>(null);
+    const [tempSnapshot, setTempSnapshot] = useState<Player | null>(null);
+    
+    const [interactionMode, setInteractionMode] = useState<{
+        mode: string;
+        subTool?: 'room'|'stable';
+        subSeed?: 'grain'|'veg';
+    } | null>(null);
+
     useEffect(() => {
         if (testCases.length === 0) {
-            const allActions = [...BASE_ACTIONS, ...ROUND_CARDS_POOL.sort((a,b) => (a.stage||0) - (b.stage||0))];
-            const initialCases: TestCase[] = allActions.map(act => ({
-                id: `test_${act.id}`,
-                name: `Test ${act.name}`,
-                actionId: act.id,
-                expectJson: generateDefaultExpectation(act),
-                status: 'idle'
-            }));
-            setTestCases(initialCases);
+            const cases: TestCase[] = [];
+
+            BASE_ACTIONS.forEach(act => {
+                let type: TestCase['type'] = 'auto';
+                let setupType = undefined;
+                let setupRes = undefined;
+                let expect = generateDefaultExpectation(act);
+
+                if (act.mode === 'plow') {
+                    type = 'interactive';
+                    setupType = 'plow_interactive';
+                    expect = '{"farm.fields": 1}';
+                } else if (act.mode === 'build_menu') {
+                    type = 'interactive';
+                    setupType = 'build_interactive';
+                    setupRes = { wood: 70, reed: 30 };
+                    expect = '{"farm.rooms": 1}'; 
+                }
+
+                cases.push({
+                    id: `base_${act.id}`,
+                    name: act.name,
+                    actionId: act.id,
+                    type,
+                    setupType,
+                    setupResources: setupRes,
+                    expectJson: expect,
+                    status: 'idle'
+                });
+            });
+
+            const sortedRounds = [...ROUND_CARDS_POOL].sort((a,b) => (a.stage||0) - (b.stage||0));
+            sortedRounds.forEach(act => {
+                let type: TestCase['type'] = 'auto';
+                let setupType = undefined;
+                let setupRes = undefined;
+                let expect = generateDefaultExpectation(act);
+
+                if (act.mode === 'plow_sow') {
+                    type = 'interactive';
+                    setupType = 'plow_sow_interactive';
+                    setupRes = { grain: 20, veg: 20 };
+                    expect = '{"farm.fields": 1, "farm.crops": 1}';
+                }
+                
+                cases.push({
+                    id: `round_${act.id}`,
+                    name: `R${act.stage}: ${act.name}`,
+                    actionId: act.id,
+                    type,
+                    setupType,
+                    setupResources: setupRes,
+                    expectJson: expect,
+                    status: 'idle'
+                });
+            });
+
+            setTestCases(cases);
         }
     }, []);
 
-    // Monitor for changes during a test run
-    useEffect(() => {
-        if (runningTest) {
-            // Wait a tick for state to settle? Actually, since this effect runs ON change, 
-            // we check if the relevant player has changed significantly or if we just want to verify immediately.
-            // However, forceAction might be async in terms of React state propagation.
-            // We'll perform verification here.
-            
-            const currentPlayerIdx = (gameState.startPlayer + gameState.turnIdx) % 4; // Note: turnIdx might have incremented
-            // We need to find the player who performed the action. 
-            // If turn advanced, the previous player is the one we want to check.
-            // But forceAction updates turnIdx. 
-            // Let's assume the snapshot has the correct ID.
-            
-            const pId = runningTest.snapshot.id;
-            const currentPlayer = players.find(p => p.id === pId);
-            
-            if (currentPlayer && currentPlayer !== runningTest.snapshot) {
-                verifyTest(runningTest.id, runningTest.snapshot, currentPlayer);
-                setRunningTest(null);
-            }
-        }
-    }, [players, gameState.turnIdx]); // triggers when players update or turn changes
+    // FIX 2: Removed the crashing useEffect that tried `new Set(prev.fences)` on `{}`.
+    // Initialization logic handles it now.
 
-    const generateDefaultExpectation = (act: Action): string => {
+    function generateDefaultExpectation(act: Action): string {
         const deltas: any = {};
         if (act.type === 'res') {
-            if (act.res) deltas[`res.${act.res}`] = act.acc || act.amount || 1;
-            // Handle animals which are on a different root key
-            if (['sheep','boar','cow'].includes(act.res || '')) {
-                 deltas[`animals.${act.res}`] = act.acc || act.amount || 1;
-                 delete deltas[`res.${act.res}`];
-            }
+            if (['sheep','boar','cow'].includes(act.res!)) deltas[`animals.${act.res}`] = act.acc || act.amount || 1;
+            else deltas[`res.${act.res}`] = act.acc || act.amount || 1;
+        } else if (act.type === 'res_combo') {
+            deltas['res.reed'] = 1; deltas['res.stone'] = 1; deltas['res.food'] = 1;
         }
-        else if (act.type === 'res_combo') {
-            if (act.id === 'act_market') {
-                deltas['res.reed'] = 1; deltas['res.stone'] = 1; deltas['res.food'] = 1;
-            }
+        return JSON.stringify(deltas).replace(/"/g, '');
+    }
+
+    const runTest = (tc: TestCase) => {
+        const freshPlayer = JSON.parse(JSON.stringify(TEST_PLAYER_TEMPLATE));
+        freshPlayer.fences = new Set(); // Reset fences to Set
+
+        if (tc.setupResources) {
+            Object.entries(tc.setupResources).forEach(([k, v]) => {
+                // @ts-ignore
+                freshPlayer.res[k] = v;
+            });
         }
-        else if (act.mode === 'plow') deltas['farm.fields'] = 1;
-        else if (act.mode === 'sow') deltas['farm.crops'] = 1;
-        else if (act.mode === 'build_menu') deltas['farm.rooms'] = 1;
-        else if (act.mode === 'fence') deltas['farm.fences'] = 4;
+
+        // Clone for snapshot, ensure fences is Set (though empty)
+        const snapshot = JSON.parse(JSON.stringify(freshPlayer));
+        snapshot.fences = new Set();
+
+        setLocalPlayer(freshPlayer);
+        setTempSnapshot(snapshot); 
+        setActiveTestId(tc.id);
         
-        // Return simplified JSON for editing
-        return JSON.stringify(deltas).replace(/"/g, ''); 
+        updateTestCase(tc.id, { status: 'waiting', resultMsg: 'Running...' });
+
+        if (tc.type === 'auto') {
+            setTimeout(() => {
+                const afterPlayer = applyAutoAction(freshPlayer, tc.actionId);
+                setLocalPlayer(afterPlayer);
+                verify(tc, freshPlayer, afterPlayer);
+            }, 100);
+        } else {
+            if (tc.setupType === 'plow_interactive') {
+                setInteractionMode({ mode: 'plow' });
+            } else if (tc.setupType === 'build_interactive') {
+                setInteractionMode({ mode: 'build', subTool: 'room' });
+            } else if (tc.setupType === 'plow_sow_interactive') {
+                setInteractionMode({ mode: 'plow_sow', subSeed: 'grain' });
+            }
+            updateTestCase(tc.id, { status: 'waiting', resultMsg: 'Waiting for user interaction...' });
+        }
     };
 
-    const getNestedVal = (obj: any, path: string): number => {
-        if (path === 'farm.fields') return obj.farm.filter((x:number) => x === 2).length;
-        if (path === 'farm.rooms') return obj.farm.filter((x:number) => x === 1).length;
-        if (path === 'farm.stables') return obj.farm.filter((x:number) => x === 5).length;
-        if (path === 'farm.crops') return obj.farmCounts.reduce((a:number,b:number) => a+b, 0);
-        if (path === 'farm.fences') return obj.fences.size || obj.fences.length || 0;
+    const applyAutoAction = (p: Player, actId: string): Player => {
+        const newP = JSON.parse(JSON.stringify(p));
+        // Restore Set safely
+        newP.fences = p.fences instanceof Set ? new Set(p.fences) : new Set();
+        
+        const act = [...BASE_ACTIONS, ...ROUND_CARDS_POOL].find(a => a.id === actId);
+        if (!act) return newP;
 
-        return path.split('.').reduce((o, i) => (o ? o[i] : undefined), obj) || 0;
+        if (act.type === 'res') {
+            const amt = act.acc || act.amount || 0;
+            if(['sheep','boar','cow'].includes(act.res!)) {
+                // @ts-ignore
+                newP.animals[act.res!] += amt;
+            } else {
+                // @ts-ignore
+                newP.res[act.res!] += amt;
+            }
+        } else if (act.type === 'res_combo') {
+            newP.res.reed++; newP.res.stone++; newP.res.food++;
+        }
+        
+        return newP;
     };
 
-    const verifyTest = (testId: string, before: Player, after: Player) => {
-        const testCase = testCases.find(t => t.id === testId);
-        if (!testCase) return;
-
-        try {
-            // Relaxed JSON parsing (add quotes back if missing to make it valid JSON)
-            let jsonStr = testCase.expectJson.replace(/(\w+(\.\w+)*):/g, '"$1":'); 
-            if(!jsonStr.startsWith('{')) jsonStr = '{' + jsonStr + '}';
+    const handleFarmClick = (tileIdx: number) => {
+        if (!interactionMode || !activeTestId) return;
+        
+        setLocalPlayer(prev => {
+            const p = JSON.parse(JSON.stringify(prev));
+            // FIX 3: Safe restore of Set
+            // If prev.fences is Set, Array.from works.
+            // If prev.fences is {} (from JSON parse of prev state somewhere?), Array.from({}) -> [].
+            // This is safer than new Set(obj).
+            p.fences = new Set(Array.from(prev.fences instanceof Set ? prev.fences : []));
             
+            if (interactionMode.mode === 'plow') {
+                if (p.farm[tileIdx] === 0) p.farm[tileIdx] = 2;
+            }
+            else if (interactionMode.mode === 'build') {
+                if (p.farm[tileIdx] === 0) {
+                    if (interactionMode.subTool === 'room') {
+                        if (p.res.wood >= 5 && p.res.reed >= 2) {
+                            p.farm[tileIdx] = 1;
+                            p.res.wood -= 5; p.res.reed -= 2;
+                        }
+                    } else if (interactionMode.subTool === 'stable') {
+                        if (p.res.wood >= 2) {
+                            p.farm[tileIdx] = 5;
+                            p.res.wood -= 2;
+                            p.stablesCount++;
+                        }
+                    }
+                }
+            }
+            else if (interactionMode.mode === 'plow_sow') {
+                if (p.farm[tileIdx] === 0) {
+                    p.farm[tileIdx] = 2; 
+                } else if (p.farm[tileIdx] === 2 && !p.farmContent[tileIdx]) {
+                    const seed = interactionMode.subSeed || 'grain';
+                    if (p.res[seed] > 0) {
+                        p.res[seed]--;
+                        p.farmContent[tileIdx] = seed;
+                        p.farmCounts[tileIdx] = seed === 'grain' ? 3 : 2;
+                    }
+                }
+            }
+
+            return p;
+        });
+    };
+
+    const finishInteractiveTest = () => {
+        if (!activeTestId || !tempSnapshot) return;
+        const tc = testCases.find(t => t.id === activeTestId);
+        if (!tc) return;
+
+        verify(tc, tempSnapshot, localPlayer);
+        
+        // Cleanup resources
+        setLocalPlayer(prev => ({
+            ...prev,
+            res: { ...prev.res, wood: 0, clay: 0, reed: 0, stone: 0, food: 0, grain: 0, veg: 0 }
+        }));
+        
+        setInteractionMode(null);
+        setActiveTestId(null);
+        setTempSnapshot(null);
+    };
+
+    const verify = (tc: TestCase, before: any, after: any) => {
+        try {
+            let jsonStr = tc.expectJson.replace(/(\w+(\.\w+)*):/g, '"$1":');
+            if (!jsonStr.startsWith('{')) jsonStr = '{' + jsonStr + '}';
             const expected = JSON.parse(jsonStr);
             const errors: string[] = [];
 
             Object.keys(expected).forEach(key => {
-                const expVal = expected[key];
-                const beforeVal = getNestedVal(before, key);
-                const afterVal = getNestedVal(after, key);
-                const actualDelta = afterVal - beforeVal;
-                
-                // Allow ">= 3" logic if we are testing accumulators? 
-                // For now exact match on delta or simple heuristic
-                if (actualDelta !== expVal) {
-                    // Special case for accumulators: actual delta should be >= base amount
-                    // But here we want strict tests.
-                    errors.push(`${key}: expected +${expVal}, got ${actualDelta > 0 ? '+' : ''}${actualDelta}`);
+                const expDelta = expected[key];
+                const v1 = getValue(before, key);
+                const v2 = getValue(after, key);
+                const actualDelta = v2 - v1;
+
+                if (actualDelta !== expDelta) {
+                    errors.push(`${key}: exp +${expDelta}, got ${actualDelta}`);
                 }
             });
 
             if (errors.length === 0) {
-                updateTestCase(testId, { status: 'pass', resultMsg: 'All expectations met.' });
+                updateTestCase(tc.id, { status: 'pass', resultMsg: 'OK' });
             } else {
-                updateTestCase(testId, { status: 'fail', resultMsg: errors.join('; ') });
+                updateTestCase(tc.id, { status: 'fail', resultMsg: errors.join(', ') });
             }
         } catch (e) {
-            updateTestCase(testId, { status: 'fail', resultMsg: 'Invalid JSON expectation format' });
+            console.error(e);
+            updateTestCase(tc.id, { status: 'fail', resultMsg: 'JSON Error' });
         }
     };
 
-    const runTest = (testId: string) => {
-        const testCase = testCases.find(t => t.id === testId);
-        if (!testCase) return;
-
-        // Reset Status
-        updateTestCase(testId, { status: 'running', resultMsg: 'Running...' });
-
-        // Snapshot
-        const pIdx = (gameState.startPlayer + gameState.turnIdx) % 4;
-        const p = players[pIdx];
-        
-        // Prepare Runner
-        setRunningTest({ id: testId, snapshot: JSON.parse(JSON.stringify(p)) }); // Deep clone snapshot
-
-        // Execute
-        debug.forceAction(testCase.actionId);
-    };
-
-    const updateTestCase = (id: string, updates: Partial<TestCase>) => {
-        setTestCases(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
-    };
-
-    const handleImportCSV = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-            const text = evt.target?.result as string;
-            if (!text) return;
-            const lines = text.split('\n');
-            const newCases: TestCase[] = [];
-            // Skip header
-            for (let i = 1; i < lines.length; i++) {
-                const line = lines[i].trim();
-                if (!line) continue;
-                // Simple CSV parse (assumes no commas in descriptions for now)
-                const parts = line.split(',');
-                if (parts.length >= 4) {
-                    newCases.push({
-                        id: parts[0],
-                        name: parts[1],
-                        actionId: parts[2],
-                        expectJson: parts.slice(3).join(','), // Rejoin remaining commas in json
-                        status: 'idle'
-                    });
-                }
-            }
-            if (newCases.length > 0) {
-                setTestCases(newCases);
-                alert(`Imported ${newCases.length} test cases.`);
-            }
-        };
-        reader.readAsText(file);
-    };
-
-    const handleExportCSV = () => {
-        const header = "ID,Name,ActionID,Expectations (JSON)\n";
-        const rows = testCases.map(t => `${t.id},${t.name},${t.actionId},"${t.expectJson.replace(/"/g, '""')}"`).join('\n');
-        const blob = new Blob([header + rows], { type: 'text/csv' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'agricola_test_cases.csv';
-        a.click();
-    };
-
-    // --- Control Logic ---
-    const resetGame = () => window.location.reload();
-    
-    const jumpRound = (targetRound: number) => {
-        let currentRoundCards = [...gameState.roundCards];
-        let currentDeck = [...gameState.deck];
-        const currentCount = currentRoundCards.length;
-        
-        if (targetRound === currentCount) {
-             debug.setGameState({ ...gameState, round: targetRound });
-             return;
-        }
-
-        // Fix: Ensure we consider base actions separate from round cards.
-        // Round 1 has 0 round cards revealed initially? No, usually 1 if initialized.
-        // Assuming roundCards contains ONLY revealed round cards (plus potentially any persistent ones? No, just the list).
-        // ROUND_CARDS_POOL has 'stage'.
-        
-        // Simplified Logic: Rebuild from scratch based on round
-        // 1. Gather all round cards back into a pool
-        const all = [...currentRoundCards, ...currentDeck].filter(c => c.stage); // Only round cards
-        const allSorted = all.sort((a,b) => (a.stage||0) - (b.stage||0)); // Rough sort
-        
-        // 2. Distribute
-        const newRevealed: Action[] = [];
-        const newDeck: Action[] = [];
-        
-        // We simply take the first N cards where N = targetRound
-        // Note: This naive shuffle might mess up card order. 
-        // Better: Try to preserve existing order if possible?
-        // Prompt requirement: "Correctly hide/show".
-        
-        if (targetRound < currentCount) {
-             // Moving back: Pop from roundCards, Unshift to Deck
-             const diff = currentCount - targetRound;
-             const moving = currentRoundCards.splice(currentCount - diff, diff);
-             currentDeck = [...moving, ...currentDeck];
-        } else {
-             // Moving fwd: Shift from Deck, Push to roundCards
-             const diff = targetRound - currentCount;
-             const moving = currentDeck.splice(0, diff);
-             currentRoundCards = [...currentRoundCards, ...moving];
-        }
-
-        debug.setGameState({ 
-            ...gameState, 
-            round: targetRound, 
-            roundCards: currentRoundCards,
-            deck: currentDeck
-        });
-    };
-
-    const giveResources = (type: string, amt: number) => {
-        const ps = [...players];
-        const pIdx = (gameState.startPlayer + gameState.turnIdx) % 4;
+    const getValue = (p: Player, path: string): number => {
+        if (path === 'farm.fields') return p.farm.filter(x => x === 2).length;
+        if (path === 'farm.rooms') return p.farm.filter(x => x === 1).length;
+        if (path === 'farm.crops') return p.farmContent.filter(x => x !== null).length;
+        const parts = path.split('.');
         // @ts-ignore
-        if (['sheep','boar','cow'].includes(type)) ps[pIdx].animals[type] += amt;
-        // @ts-ignore
-        else ps[pIdx].res[type] += amt;
-        debug.setPlayers(ps);
+        return parts.reduce((obj, key) => obj?.[key], p) || 0;
+    };
+
+    const updateTestCase = (id: string, partial: Partial<TestCase>) => {
+        setTestCases(prev => prev.map(t => t.id === id ? { ...t, ...partial } : t));
     };
 
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4 font-mono text-sm">
-            <div className="bg-slate-900 w-full h-full max-w-7xl border-2 border-indigo-500 rounded-lg shadow-2xl flex flex-col overflow-hidden">
-                {/* Header */}
-                <div className="bg-indigo-900/50 p-4 border-b border-indigo-500 flex justify-between items-center">
-                    <div className="flex items-center gap-4">
-                        <h1 className="text-xl font-bold text-indigo-200 uppercase tracking-widest">🛠️ Test Console</h1>
-                        <div className="flex bg-slate-800 rounded p-1">
-                             <button onClick={() => setActiveTab('control')} className={`px-4 py-1 rounded transition-colors ${activeTab === 'control' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Control</button>
-                             <button onClick={() => setActiveTab('cases')} className={`px-4 py-1 rounded transition-colors ${activeTab === 'cases' ? 'bg-indigo-600 text-white' : 'text-gray-400'}`}>Test Cases</button>
+        <div className="fixed inset-0 z-[200] bg-black/95 flex text-sm font-sans text-gray-200">
+            {/* Sidebar */}
+            <div className="w-1/3 border-r border-gray-700 flex flex-col bg-gray-900">
+                <div className="p-4 border-b border-gray-700 bg-gray-800 flex justify-between items-center">
+                    <h2 className="font-bold text-lg text-purple-400">🧪 Unit Tests</h2>
+                    <button onClick={onClose} className="text-gray-400 hover:text-white">Close</button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                    {testCases.map(tc => (
+                        <div key={tc.id} className={`p-3 border-b border-gray-800 flex flex-col gap-1 hover:bg-gray-800/50 ${activeTestId === tc.id ? 'bg-purple-900/20 border-l-4 border-l-purple-500' : ''}`}>
+                            <div className="flex justify-between items-center">
+                                <span className="font-bold text-gray-300">{tc.name}</span>
+                                {tc.status === 'pass' && <span className="text-green-400 font-bold">PASS</span>}
+                                {tc.status === 'fail' && <span className="text-red-400 font-bold">FAIL</span>}
+                                {tc.status === 'waiting' && <span className="text-yellow-400 animate-pulse">RUNNING</span>}
+                                {tc.status === 'idle' && <button onClick={() => runTest(tc)} className="bg-gray-700 px-2 py-0.5 rounded text-xs hover:bg-gray-600">Run</button>}
+                            </div>
+                            <div className="text-xs text-gray-500 flex gap-2">
+                                <span>Expect: {tc.expectJson}</span>
+                            </div>
+                            {tc.resultMsg && <div className={`text-xs ${tc.status === 'fail' ? 'text-red-300' : 'text-gray-400'}`}>{tc.resultMsg}</div>}
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Main */}
+            <div className="flex-1 p-8 bg-stone-900 flex flex-col items-center overflow-y-auto">
+                <h1 className="text-2xl font-bold mb-6 text-stone-400">Test Environment</h1>
+                
+                {interactionMode && (
+                    <div className="bg-purple-900/40 border border-purple-500 p-4 rounded-lg mb-6 w-full max-w-2xl shadow-lg animate-fadeIn">
+                        <div className="flex justify-between items-center">
+                            <div>
+                                <div className="text-purple-300 font-bold text-lg mb-1">
+                                    Interactive Test: {interactionMode.mode.toUpperCase()}
+                                </div>
+                                <div className="text-purple-200/70 text-xs">
+                                    Click on the farm below to simulate player actions.
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                {interactionMode.mode === 'build' && (
+                                    <>
+                                        <button onClick={() => setInteractionMode({...interactionMode, subTool:'room'})} className={`px-3 py-1 rounded text-xs border ${interactionMode.subTool==='room'?'bg-blue-600 border-blue-400':'border-gray-500'}`}>Room</button>
+                                        <button onClick={() => setInteractionMode({...interactionMode, subTool:'stable'})} className={`px-3 py-1 rounded text-xs border ${interactionMode.subTool==='stable'?'bg-orange-600 border-orange-400':'border-gray-500'}`}>Stable</button>
+                                    </>
+                                )}
+                                {interactionMode.mode === 'plow_sow' && (
+                                    <>
+                                        <button onClick={() => setInteractionMode({...interactionMode, subSeed:'grain'})} className={`px-3 py-1 rounded text-xs border ${interactionMode.subSeed==='grain'?'bg-yellow-600 border-yellow-400':'border-gray-500'}`}>Grain</button>
+                                        <button onClick={() => setInteractionMode({...interactionMode, subSeed:'veg'})} className={`px-3 py-1 rounded text-xs border ${interactionMode.subSeed==='veg'?'bg-orange-600 border-orange-400':'border-gray-500'}`}>Veg</button>
+                                    </>
+                                )}
+                                <button onClick={finishInteractiveTest} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded font-bold shadow ml-4">
+                                    Verify Result
+                                </button>
+                            </div>
                         </div>
                     </div>
-                    <button onClick={onClose} className="bg-red-600 hover:bg-red-500 text-white px-4 py-1 rounded font-bold">EXIT TEST MODE</button>
+                )}
+
+                <div className="scale-110 origin-top">
+                    <PlayerPanel 
+                        player={localPlayer} 
+                        isActive={true} 
+                        isNextStart={false} 
+                        onFarmClick={handleFarmClick}
+                    />
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 bg-slate-900 text-gray-300">
-                    
-                    {/* --- CONTROL TAB --- */}
-                    {activeTab === 'control' && (
-                        <div className="space-y-6">
-                            <div className="grid grid-cols-2 gap-8">
-                                <div className="space-y-4">
-                                    <h3 className="text-white font-bold border-b border-slate-700 pb-2">Game State</h3>
-                                    <div className="flex gap-2 items-center">
-                                        <button onClick={resetGame} className="bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded text-xs">Reboot</button>
-                                        <span className="text-gray-500">|</span>
-                                        <span>Round Jump:</span>
-                                        {[1, 4, 7, 10, 14].map(r => (
-                                            <button key={r} onClick={() => jumpRound(r)} className={`px-3 py-1 rounded text-xs border ${gameState.round === r ? 'bg-yellow-600 border-yellow-500 text-white' : 'bg-slate-700 border-slate-600 hover:bg-slate-600'}`}>{r}</button>
-                                        ))}
-                                    </div>
-                                    <div className="bg-slate-800 p-4 rounded border border-slate-700">
-                                        <div className="mb-2 font-bold text-white text-xs uppercase">Inject Resources (Current Player)</div>
-                                        <div className="grid grid-cols-5 gap-2">
-                                            {['wood','clay','reed','stone','food','grain','veg','sheep','boar','cow'].map(r => (
-                                                <button key={r} onClick={() => giveResources(r, 5)} className="bg-slate-700 hover:bg-green-700 border border-slate-600 px-2 py-1 rounded text-[10px] capitalize transition-colors">
-                                                    +5 {r}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <button onClick={() => {
-                                            const ps = [...players];
-                                            ps[(gameState.startPlayer + gameState.turnIdx) % 4].res.workers = 5;
-                                            debug.setPlayers(ps);
-                                        }} className="mt-2 w-full bg-blue-700 hover:bg-blue-600 px-2 py-1 rounded text-xs">Refill Workers</button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* --- CASES TAB --- */}
-                    {activeTab === 'cases' && (
-                        <div className="space-y-4">
-                            {/* Toolbar */}
-                            <div className="flex justify-between items-center bg-slate-800 p-3 rounded border border-slate-700">
-                                <div className="flex gap-2">
-                                    <button onClick={handleExportCSV} className="bg-emerald-700 hover:bg-emerald-600 text-white px-3 py-1 rounded text-xs flex items-center gap-1">
-                                        ⬇️ Export CSV
-                                    </button>
-                                    <label className="bg-blue-700 hover:bg-blue-600 text-white px-3 py-1 rounded text-xs cursor-pointer flex items-center gap-1">
-                                        ⬆️ Import CSV
-                                        <input type="file" ref={fileInputRef} onChange={handleImportCSV} className="hidden" accept=".csv" />
-                                    </label>
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                    Total Cases: {testCases.length} | Passed: {testCases.filter(t => t.status === 'pass').length}
-                                </div>
-                            </div>
-
-                            {/* Table */}
-                            <div className="overflow-x-auto border border-slate-700 rounded">
-                                <table className="w-full text-left border-collapse">
-                                    <thead>
-                                        <tr className="bg-slate-800 text-gray-400 uppercase text-[10px] tracking-wider">
-                                            <th className="p-3 border-b border-slate-700 w-20">Status</th>
-                                            <th className="p-3 border-b border-slate-700 w-32">ID</th>
-                                            <th className="p-3 border-b border-slate-700">Name</th>
-                                            <th className="p-3 border-b border-slate-700 w-32">Action ID</th>
-                                            <th className="p-3 border-b border-slate-700">Expected Delta (JSON)</th>
-                                            <th className="p-3 border-b border-slate-700">Result / Actual</th>
-                                            <th className="p-3 border-b border-slate-700 w-24 text-right">Run</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="text-xs">
-                                        {testCases.map(tc => {
-                                            const isPass = tc.status === 'pass';
-                                            const isFail = tc.status === 'fail';
-                                            return (
-                                                <tr key={tc.id} className={`border-b border-slate-800 transition-colors ${isPass ? 'bg-green-900/10' : isFail ? 'bg-red-900/10' : 'hover:bg-slate-800/50'}`}>
-                                                    <td className="p-3">
-                                                        {tc.status === 'running' && <span className="animate-spin inline-block">⏳</span>}
-                                                        {tc.status === 'pass' && <span className="text-green-400 font-bold">✅ PASS</span>}
-                                                        {tc.status === 'fail' && <span className="text-red-400 font-bold">❌ FAIL</span>}
-                                                        {tc.status === 'idle' && <span className="text-gray-600">⚪ IDLE</span>}
-                                                    </td>
-                                                    <td className="p-3 text-gray-500 font-mono">{tc.id}</td>
-                                                    <td className="p-3 font-bold text-gray-300">
-                                                        <input 
-                                                            value={tc.name} 
-                                                            onChange={e => updateTestCase(tc.id, { name: e.target.value })} 
-                                                            className="bg-transparent border-none w-full focus:bg-slate-800 focus:outline-none rounded px-1"
-                                                        />
-                                                    </td>
-                                                    <td className="p-3 text-blue-400 font-mono">{tc.actionId}</td>
-                                                    <td className="p-3 font-mono text-yellow-500">
-                                                        <input 
-                                                            value={tc.expectJson} 
-                                                            onChange={e => updateTestCase(tc.id, { expectJson: e.target.value })} 
-                                                            className="bg-transparent border-none w-full focus:bg-slate-800 focus:outline-none rounded px-1"
-                                                        />
-                                                    </td>
-                                                    <td className="p-3 text-gray-400">
-                                                        {tc.resultMsg || '-'}
-                                                    </td>
-                                                    <td className="p-3 text-right flex justify-end gap-2">
-                                                        <button 
-                                                            onClick={() => runTest(tc.id)}
-                                                            className="bg-slate-700 hover:bg-slate-600 text-white px-2 py-1 rounded shadow"
-                                                            title="Run Single Test"
-                                                        >
-                                                            ▶️
-                                                        </button>
-                                                        <button 
-                                                            onClick={() => {
-                                                                if(confirm('Delete test case?')) setTestCases(prev => prev.filter(t => t.id !== tc.id));
-                                                            }}
-                                                            className="text-red-500 hover:text-red-400 px-1"
-                                                            title="Delete"
-                                                        >
-                                                            ✕
-                                                        </button>
-                                                    </td>
-                                                </tr>
-                                            );
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                            <div className="flex justify-between items-center bg-slate-800 p-2 rounded text-xs text-gray-500">
-                                <button onClick={() => setTestCases([...testCases, { id: `test_${Date.now()}`, name: 'New Case', actionId: 'act_forest_3', expectJson: 'res.wood:3', status: 'idle' }])} className="text-blue-400 hover:underline">+ Add Case</button>
-                                <div>Tip: Ensure you have workers before running tests. Use "Control > Refill Workers" if needed.</div>
-                            </div>
-                        </div>
-                    )}
+                <div className="mt-8 text-gray-500 text-xs max-w-lg text-center">
+                    This is an isolated test instance. Actions taken here do not affect the main game.
+                    Resources are injected automatically when a test case starts and reset after verification.
                 </div>
             </div>
         </div>
