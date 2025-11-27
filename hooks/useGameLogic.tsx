@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES } from '../constants';
-import { calculateAllocation, hasNeighbor, validateFenceRules } from '../utils/gameLogic';
+import { calculateAllocation, hasNeighbor, validateFenceRules, getFenceVertices } from '../utils/gameLogic';
 import { getAIAction, aiDiscardOverflow } from '../utils/aiStrategy';
 
 const INITIAL_PLAYERS: Player[] = Array.from({ length: 4 }, (_, i) => ({
@@ -48,7 +48,6 @@ export const useGameLogic = () => {
     const [isAdjustingAnimals, setIsAdjustingAnimals] = useState(false);
     
     // Refs for mutable access in timeouts/loops
-    // This is the SINGLE SOURCE OF TRUTH for logic execution
     const stateRef = useRef({ players: INITIAL_PLAYERS, gameState: gameState });
     
     const initRef = useRef(false);
@@ -60,7 +59,6 @@ export const useGameLogic = () => {
         setLogs(prev => [{ id: Date.now() + Math.random(), msg, color }, ...prev].slice(0, 80));
     }, []);
 
-    // Timer Utility
     const scheduleNext = useCallback((fn: () => void, delay: number) => {
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => {
@@ -412,7 +410,6 @@ export const useGameLogic = () => {
     const advanceFeedStep = () => {
         if (!stateRef.current.gameState.harvestState) return; 
         
-        // Critical: Use updateGameState to correctly update Ref AND State with new object
         updateGameState(prev => {
             const nextIdx = prev.harvestState!.currentIdx + 1;
             return {
@@ -429,7 +426,6 @@ export const useGameLogic = () => {
         const need = newP.res.maxWorkers * 2;
         let deficit = need - newP.res.food;
         
-        // --- SMART AI STRATEGY ---
         const keepSeeds = deficit > 0 ? 0 : 1; 
 
         if (deficit > 0 && newP.res.grain > keepSeeds) { 
@@ -497,7 +493,6 @@ export const useGameLogic = () => {
         addLog(`${newP.name} fed workers (Begging: ${begging})`, newP.color);
         updatePlayer(p.id, () => newP);
 
-        // FIX: Use setTimeout directly to ensure this executes regardless of shared timer status
         setTimeout(() => advanceFeedStep(), 600);
     };
 
@@ -543,7 +538,6 @@ export const useGameLogic = () => {
                 harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 } 
             }));
         } else {
-            // AI Logic
             if (willOverflow) {
                 const discarded = aiDiscardOverflow(simP, simAlloc.overflow);
                 simP.animals.sheep -= discarded.sheep;
@@ -966,12 +960,23 @@ export const useGameLogic = () => {
              
              if (mode === 'plow') {
                  const pending = stateRef.current.gameState.pendingAction;
+                 let snap: Player | null = null;
                  if (pending && pending.pIdx === pId && pending.snapshot) {
-                    const oldP = JSON.parse(pending.snapshot);
-                    for(let i=0; i<15; i++) nf[i] = oldP.farm[i];
+                    snap = JSON.parse(pending.snapshot);
+                    // Reset to snapshot state so we can only drag/move the ONE field allowed
+                    if (snap) {
+                        for(let i=0; i<15; i++) nf[i] = snap.farm[i];
+                    }
                  }
 
                  if (nf[tileIdx] === 0) {
+                     // Adjacency Check: Use SNAPSHOT to check if any EXISTING fields are present
+                     // If existing fields (in snapshot), new one must neighbor them.
+                     const fieldsSource = snap ? snap.farm : pp.farm;
+                     if (fieldsSource.some(x => x === 2) && !hasNeighbor({ ...pp, farm: fieldsSource }, tileIdx, 2)) {
+                         addLog("New fields must be adjacent to existing fields", "red");
+                         return pp;
+                     }
                      nf[tileIdx] = 2;
                      return { ...pp, farm: nf };
                  }
@@ -991,6 +996,14 @@ export const useGameLogic = () => {
                              addLog("Can only plow 1 field in this action", "red");
                              return pp;
                          }
+                         
+                         // Adjacency Check: Use SNAPSHOT to check valid placement
+                         const fieldsSource = snap ? snap.farm : pp.farm;
+                         if (fieldsSource.some(x => x === 2) && !hasNeighbor({ ...pp, farm: fieldsSource }, tileIdx, 2)) {
+                             addLog("New fields must be adjacent to existing fields", "red");
+                             return pp;
+                         }
+
                          nf[tileIdx] = 2;
                          return { ...pp, farm: nf };
                      }
@@ -1132,6 +1145,29 @@ export const useGameLogic = () => {
                     addLog("Max 15 fences limit", "red");
                     return pp;
                 }
+
+                // Check continuity: New fence must connect to an existing fence vertex
+                // UNLESS it's the very first fence ever built
+                const newVerts = getFenceVertices(key);
+                let isConnected = false;
+                
+                // Use pp.fences (which includes newly added ones in this turn) to ensure chain building works
+                if (pp.fences.size === 0) {
+                    isConnected = true;
+                } else {
+                    pp.fences.forEach(existingKey => {
+                        const existingVerts = getFenceVertices(existingKey);
+                        if (existingVerts.some(v => newVerts.includes(v))) {
+                            isConnected = true;
+                        }
+                    });
+                }
+
+                if (!isConnected) {
+                    addLog("New fence must connect to existing fences", "red");
+                    return pp;
+                }
+
                 res.wood -= 1;
                 newFences.add(key);
             }
