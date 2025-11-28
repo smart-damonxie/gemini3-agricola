@@ -1,4 +1,5 @@
 
+
 export type ResourceType = 'wood' | 'clay' | 'reed' | 'stone' | 'food' | 'grain' | 'veg' | 'sheep' | 'boar' | 'cow';
 
 export interface Cost {
@@ -94,6 +95,8 @@ export interface TempMode {
   pending?: { [key: number]: 'room' | 'stable' };
   currentTool?: 'room' | 'stable';
   selectedMajorId?: string;
+  subAction?: 'sow' | 'bake' | 'both'; // For Sow/Bake choice
+  bakeTemp?: { grain: number }; // For tracking baking
 }
 
 export interface GameState {
@@ -110,6 +113,10 @@ export interface GameState {
   harvestState: { queue: number[]; currentIdx: number } | null;
   pendingAction: { pIdx: number; timer: any; snapshot: string; flags: any } | null;
   overflowQueue: any[];
+  gameOver: boolean;
+  futureResources: { [roundIdx: number]: ResourceType[] }; // roundIdx 0-13 (Round 1-14)
+  turnPhase: 'action' | 'overflow';
+  overflowPlayer: number | null;
 }
 
 export interface LogEntry {

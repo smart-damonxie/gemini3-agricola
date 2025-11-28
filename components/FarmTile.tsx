@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Player } from '../types';
 
@@ -5,11 +6,12 @@ interface Props {
   p: Player;
   idx: number;
   content: { icon: string; type: string }[];
+  capacity?: { current: number; max: number };
   onClick: () => void;
   onFenceClick?: (side: 't'|'b'|'l'|'r') => void;
 }
 
-const FarmTile: React.FC<Props> = ({ p, idx, content, onClick, onFenceClick }) => {
+const FarmTile: React.FC<Props> = ({ p, idx, content, capacity, onClick, onFenceClick }) => {
   const type = p.farm[idx];
   const isRoom = type === 1;
   const isField = type === 2;
@@ -50,6 +52,13 @@ const FarmTile: React.FC<Props> = ({ p, idx, content, onClick, onFenceClick }) =
       {/* Stable */}
       {isStable && <div className="absolute top-0.5 right-0.5 text-xs z-10 drop-shadow-md">🏚️</div>}
 
+      {/* Capacity Indicator (a/b) */}
+      {capacity && capacity.max > 0 && (
+          <div className="absolute top-0.5 right-0.5 bg-black/50 text-white text-[8px] px-1 rounded z-30 pointer-events-none">
+              {capacity.current}/{capacity.max}
+          </div>
+      )}
+
       {/* Farm Content (Crops) */}
       {isField && p.farmContent[idx] && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -66,11 +75,23 @@ const FarmTile: React.FC<Props> = ({ p, idx, content, onClick, onFenceClick }) =
         </div>
       )}
 
-      {/* Animals / Scattered Content */}
+      {/* Animals / Workers / Scattered Content */}
       {content.map((item, i) => {
+         // Consistent random scattering based on index
          const seed = (idx * 13 + i * 7) % 100;
-         const top = 2 + (seed % 30);
-         const left = 2 + ((seed * 3) % 30);
+         const top = 5 + (seed % 25);
+         const left = 5 + ((seed * 3) % 25);
+         
+         if (item.type === 'worker') {
+             return (
+                 <div key={i} className="absolute z-20" style={{top: 15, left: 15}}>
+                     <div className="w-6 h-6 rounded-full border border-white shadow-md flex items-center justify-center" style={{backgroundColor: p.color}}>
+                        <span className="text-white text-[10px] drop-shadow-md">👷</span>
+                     </div>
+                 </div>
+             );
+         }
+
          return (
              <div key={i} className="absolute text-sm pointer-events-none drop-shadow-md z-20" style={{top, left}}>
                  {item.icon}
@@ -79,14 +100,12 @@ const FarmTile: React.FC<Props> = ({ p, idx, content, onClick, onFenceClick }) =
       })}
 
       {/* Render Fences - Positioned in the 4px grid gaps */}
-      {/* Thick Sky Blue Fences (8px wide/high) centered on the gap */}
       {hasFence('t') && <div className="absolute top-[-6px] left-[-6px] right-[-6px] h-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
       {hasFence('b') && <div className="absolute bottom-[-6px] left-[-6px] right-[-6px] h-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
       {hasFence('l') && <div className="absolute left-[-6px] top-[-6px] bottom-[-6px] w-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
       {hasFence('r') && <div className="absolute right-[-6px] top-[-6px] bottom-[-6px] w-2 bg-sky-400 z-30 pointer-events-none shadow-sm rounded-sm" />}
 
       {/* Fence Click Zones (Only if onFenceClick is provided) */}
-      {/* Zones cover the gap + a small strip of the tile for easier clicking */}
       {onFenceClick && (
           <>
             <div className={`${fenceZoneBase} top-[-8px] left-0 right-0 h-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('t'); }} title="Build Top Fence" />
