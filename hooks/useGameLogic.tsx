@@ -757,6 +757,40 @@ export const useGameLogic = () => {
     const confirmModeAction = (pId: number) => {
          const p = stateRef.current.players[pId];
          if (!p.tempMode) return;
+
+         // Handle Immediate Bake Mode (triggered after building oven)
+         if (p.tempMode.mode === 'bake_immediate') {
+             const mId = p.tempMode.selectedMajorId;
+             const card = p.majors.find(m => m.id === mId);
+             
+             if (card && card.specialBake && p.tempMode.bakeTemp) {
+                 const grain = p.tempMode.bakeTemp.grain;
+                 const { in: inAmt, out: outAmt } = card.specialBake;
+                 if (grain > p.res.grain) {
+                     addLog("Not enough grain", "red");
+                     return;
+                 }
+                 const batches = Math.floor(grain / inAmt);
+                 const cost = batches * inAmt;
+                 const gain = batches * outAmt;
+                 
+                 if (cost > 0) {
+                     const finalP = { ...p, res: { ...p.res, grain: p.res.grain - cost, food: p.res.food + gain }, tempMode: null };
+                     addLog(`${p.name} baked ${cost} grain -> ${gain} food`, p.color);
+                     updatePlayer(pId, () => finalP);
+                 } else {
+                     updatePlayer(pId, () => ({ ...p, tempMode: null }));
+                 }
+                 updateGameState(prev => ({ ...prev, turnIdx: prev.turnIdx + 1 }));
+                 scheduleNext(() => nextTurn(), 500);
+                 return;
+             }
+             // Fallback
+             updatePlayer(pId, () => ({ ...p, tempMode: null }));
+             updateGameState(prev => ({ ...prev, turnIdx: prev.turnIdx + 1 }));
+             scheduleNext(() => nextTurn(), 500);
+             return;
+         }
          
          const pending = stateRef.current.gameState.pendingAction;
          const { majors } = stateRef.current.gameState;
@@ -766,13 +800,94 @@ export const useGameLogic = () => {
              let isValid = true;
              let errMsg = "";
              let finalP = { ...p };
+             
+             // --- SNAPSHOT RESTORATION FOR VALIDATION ---
+             const snapP = JSON.parse(pending.snapshot);
+             snapP.fences = new Set(snapP.fences);
+             
+             // --- ACTION EFFECTIVENESS CHECKS ---
+             if (mode === 'plow') {
+                 const oldFields = snapP.farm.filter((x: number) => x === 2).length;
+                 const newFields = finalP.farm.filter((x: number) => x === 2).length;
+                 if (newFields <= oldFields) { isValid = false; errMsg = "Must plow a field!"; }
+             }
+             else if (mode === 'build_menu') {
+                 const oldBuildings = snapP.farm.filter((x: number) => x === 1 || x === 5).length;
+                 const newBuildings = finalP.farm.filter((x: number) => x === 1 || x === 5).length;
+                 if (newBuildings <= oldBuildings) { isValid = false; errMsg = "Must build a room or stable!"; }
+             }
+             else if (mode === 'sow') {
+                 const countCrops = (pp: any) => pp.farmContent.filter((x:any) => x).length;
+                 if (countCrops(finalP) <= countCrops(snapP)) { isValid = false; errMsg = "Must sow at least one field!"; }
+             }
+             else if (mode === 'fence') {
+                 if (finalP.fences.size <= snapP.fences.size) { isValid = false; errMsg = "Must build fences!"; }
+             }
+             else if (mode === 'major') {
+                 if (!p.tempMode.selectedMajorId) { isValid = false; errMsg = "Must select a Major Improvement!"; }
+             }
+             else if (mode === 'grow' || mode === 'grow_force') {
+                 if (finalP.res.maxWorkers <= snapP.res.maxWorkers) { isValid = false; errMsg = "Must grow family!"; }
+             }
+             else if (mode === 'reno_major') {
+                  const renoDone = finalP.houseType !== snapP.houseType;
+                  const majorDone = p.tempMode.selectedMajorId;
+                  if (!renoDone && !majorDone) { isValid = false; errMsg = "Must Renovate or take Major!"; }
+             }
+             else if (mode === 'reno_fence') {
+                  const renoDone = finalP.houseType !== snapP.houseType;
+                  const fenceDone = finalP.fences.size > snapP.fences.size;
+                  if (!renoDone && !fenceDone) { isValid = false; errMsg = "Must Renovate or build Fences!"; }
+             }
+             else if (mode === 'plow_sow') {
+                 const plowDone = finalP.farm.filter((x:number) => x===2).length > snapP.farm.filter((x:any)=>x===2).length;
+                 const countCrops = (pp: any) => pp.farmContent.filter((x:any) => x).length;
+                 const sowDone = countCrops(finalP) > countCrops(snapP);
+                 if (!plowDone && !sowDone) { isValid = false; errMsg = "Must Plow or Sow!"; }
+             }
+             else if (mode === 'sow_bake_choice') {
+                 const sub = p.tempMode.subAction;
+                 const countCrops = (pp: any) => pp.farmContent.filter((x:any) => x).length;
+                 const sowDone = countCrops(finalP) > countCrops(snapP);
+                 const bakeAmt = p.tempMode.bakeTemp?.grain || 0;
+                 
+                 if (sub === 'sow' && !sowDone) { isValid = false; errMsg = "Must Sow!"; }
+                 if (sub === 'bake' && bakeAmt <= 0) { isValid = false; errMsg = "Must Bake!"; }
+                 if (sub === 'both' && !sowDone && bakeAmt <= 0) { isValid = false; errMsg = "Must Sow or Bake!"; }
+                 
+                 // Apply Bake Logic if valid
+                 if (isValid && bakeAmt > 0) {
+                     // Check if player has grain
+                     if (bakeAmt > finalP.res.grain) {
+                         isValid = false; errMsg = "Not enough grain!";
+                     } else {
+                         // Find best oven conversion
+                         let bestRate = 0; // Output per 1 grain
+                         finalP.majors.forEach(m => {
+                             if (m.specialBake && m.specialBake.in === 1) {
+                                 const rate = m.specialBake.out / m.specialBake.in;
+                                 if (rate > bestRate) bestRate = rate;
+                             } else if (m.bakeRate) {
+                                  // Fallback for generic bake rate
+                                  if (m.bakeRate > bestRate) bestRate = m.bakeRate;
+                             }
+                         });
+                         // Default inefficient bake (fireplaces usually don't bake well, but Major m1/m2 say "Bake(2 food)")
+                         // m1/m2 have bakeRate: 2.
+                         if (bestRate === 0) bestRate = 2; // Assuming basic fireplace baking if no better oven
+                         
+                         const foodGain = bakeAmt * bestRate;
+                         finalP.res.grain -= bakeAmt;
+                         finalP.res.food += foodGain;
+                         addLog(`${p.name} baked ${bakeAmt} grain -> ${foodGain} food`, p.color);
+                     }
+                 }
+             }
 
              // MAJOR CARD LOGIC
-             if (mode === 'major' || mode === 'reno_major') {
+             if (isValid && (mode === 'major' || mode === 'reno_major')) {
                  const mId = p.tempMode.selectedMajorId;
-                 if (!mId) {
-                     isValid = false; errMsg = "No Major Improvement selected.";
-                 } else {
+                 if (mId) {
                      const card = majors.find(m => m.id === mId);
                      if (!card) {
                          isValid = false; errMsg = "Card not found/already taken.";
@@ -796,12 +911,44 @@ export const useGameLogic = () => {
                              addLog(`${p.name} built ${card.name}`, p.color);
                              const newMajors = majors.filter(m => m.id !== mId);
                              updateGameState(prev => ({ ...prev, majors: newMajors }));
+
+                             // IMMEDIATE BAKE TRIGGER (Only if we aren't already quitting or in a complex flow)
+                             if (card.type === 'bake' && finalP.res.grain > 0) {
+                                if (p.type === 'human') {
+                                    // Occupy & Setup next step manually since we are returning early
+                                    const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
+                                    updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null }));
+                                    
+                                    updatePlayer(pId, () => ({
+                                        ...finalP,
+                                        res: { ...finalP.res, workers: finalP.res.workers - 1 },
+                                        tempMode: { 
+                                            mode: 'bake_immediate', 
+                                            actId: p.tempMode!.actId, 
+                                            selectedMajorId: mId,
+                                            bakeTemp: { grain: 0 }
+                                        }
+                                    }));
+                                    return; // STOP here, wait for user input
+                                } else {
+                                    // AI Auto Bake
+                                    const { in: inAmt, out: outAmt } = card.specialBake || { in: 1, out: 1 };
+                                    const batches = Math.floor(finalP.res.grain / inAmt);
+                                    if (batches > 0) {
+                                        const cost = batches * inAmt;
+                                        const gain = batches * outAmt;
+                                        finalP.res.grain -= cost;
+                                        finalP.res.food += gain;
+                                        addLog(`${p.name} baked ${cost} grain -> ${gain} food`, p.color);
+                                    }
+                                }
+                             }
                          }
                      }
                  }
              }
 
-             if (mode === 'fence' || mode === 'reno_fence') {
+             if (isValid && (mode === 'fence' || mode === 'reno_fence')) {
                  if (!validateFenceRules(finalP)) {
                      isValid = false; errMsg = "Fences must form closed pastures!";
                  }

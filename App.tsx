@@ -67,6 +67,9 @@ const App: React.FC = () => {
   const isHumanTurn = activePlayer.type === 'human' && !gameState.harvestPhase;
   const actionDetails = activePlayer.tempMode ? getActionDetails(activePlayer.tempMode.actId) : null;
   const humanPlayer = players.find(p => p.type === 'human');
+  const bakeMajorCard = activePlayer.tempMode?.mode === 'bake_immediate' 
+      ? activePlayer.majors.find(m => m.id === activePlayer.tempMode!.selectedMajorId) 
+      : null;
 
   const getStage = (r: number) => {
       if (r <= 4) return 1;
@@ -86,10 +89,134 @@ const App: React.FC = () => {
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-bold text-yellow-500 tracking-tight">Agricola Lite</h1>
             <RoundTracker currentRound={gameState.round} />
-            <div className="text-xs text-stone-500 hidden sm:block">
-              Turn: {gameState.turnIdx + 1} | SP: {players[gameState.startPlayer].name}
-            </div>
           </div>
+          
+          {/* ACTION INTERACTION OVERLAY - MOVED TO HEADER */}
+          {activePlayer.tempMode && activePlayer.type === 'human' && (
+             <div className="flex-1 mx-4 flex justify-center animate-fadeIn">
+                <div className="bg-stone-800/95 border-2 border-yellow-600 px-6 py-2 shadow-2xl rounded-full flex items-center gap-4 backdrop-blur-sm">
+                  
+                  <div className="flex flex-col border-r border-stone-600 pr-4">
+                      <span className="text-[9px] text-yellow-500 uppercase font-bold tracking-wider leading-none">Action</span>
+                      <span className="text-sm font-bold text-white whitespace-nowrap">
+                          {activePlayer.tempMode.mode === 'sow_bake_choice' ? 'Sow/Bake' : 
+                           activePlayer.tempMode.mode === 'bake_immediate' ? 'Bake' :
+                           activePlayer.tempMode.mode === 'simple' ? 'Confirm?' :
+                           actionDetails?.name || activePlayer.tempMode.mode}
+                      </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                      {activePlayer.tempMode.mode === 'build_menu' && (
+                          <div className="flex bg-stone-900 rounded-full p-0.5 gap-1">
+                              <button 
+                                  onClick={() => switchTool('room')}
+                                  className={`px-2 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${activePlayer.tempMode.currentTool === 'room' ? 'bg-blue-600 text-white' : 'text-stone-400 hover:text-white'}`}
+                              >
+                                  🏠 Room
+                              </button>
+                              <button 
+                                  onClick={() => switchTool('stable')}
+                                  className={`px-2 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${activePlayer.tempMode.currentTool === 'stable' ? 'bg-orange-600 text-white' : 'text-stone-400 hover:text-white'}`}
+                              >
+                                  🏚️ Stable
+                              </button>
+                          </div>
+                      )}
+
+                      {(activePlayer.tempMode.mode === 'sow' || activePlayer.tempMode.mode === 'plow_sow') && (
+                          <div className="flex bg-stone-900 rounded-full p-0.5 gap-1">
+                               <button 
+                                  onClick={() => toggleSeed('grain')}
+                                  className={`px-2 py-1 rounded-full text-[10px] font-bold ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'text-stone-400'}`}
+                               >
+                                   🌾
+                               </button>
+                               <button 
+                                  onClick={() => toggleSeed('veg')}
+                                  className={`px-2 py-1 rounded-full text-[10px] font-bold ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'text-stone-400'}`}
+                               >
+                                   🥕
+                               </button>
+                          </div>
+                      )}
+
+                      {activePlayer.tempMode.mode === 'sow_bake_choice' && (
+                          <div className="flex gap-2 items-center">
+                              <div className="flex bg-stone-900 rounded-full p-0.5 gap-0.5">
+                                   <button onClick={() => setSubAction('sow')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.subAction==='sow'?'bg-green-600 text-white':'text-stone-500'}`}>Sow</button>
+                                   <button onClick={() => setSubAction('bake')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.subAction==='bake'?'bg-orange-600 text-white':'text-stone-500'}`}>Bake</button>
+                                   <button onClick={() => setSubAction('both')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.subAction==='both'?'bg-blue-600 text-white':'text-stone-500'}`}>Both</button>
+                              </div>
+                              {(activePlayer.tempMode.subAction === 'sow' || activePlayer.tempMode.subAction === 'both') && (
+                                  <div className="flex bg-stone-900 rounded-full p-0.5 gap-1">
+                                       <button onClick={() => toggleSeed('grain')} className={`px-1.5 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'text-stone-400'}`}>🌾</button>
+                                       <button onClick={() => toggleSeed('veg')} className={`px-1.5 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'text-stone-400'}`}>🥕</button>
+                                  </div>
+                              )}
+                              {(activePlayer.tempMode.subAction === 'bake' || activePlayer.tempMode.subAction === 'both') && (
+                                  <div className="flex items-center gap-0.5 bg-stone-900 p-0.5 px-1 rounded-full">
+                                      <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">-</button>
+                                      <span className="text-white font-bold text-[10px] w-3 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
+                                      <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">+</button>
+                                  </div>
+                              )}
+                          </div>
+                      )}
+                      
+                      {/* IMMEDIATE BAKE UI */}
+                      {activePlayer.tempMode.mode === 'bake_immediate' && (
+                           <div className="flex items-center gap-2 bg-stone-900 p-0.5 px-2 rounded-full">
+                              <span className="text-[10px] font-bold text-orange-300">Grain:</span>
+                              <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center font-bold text-[10px]">-</button>
+                              <span className="text-sm font-bold text-white w-4 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
+                              <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center font-bold text-[10px]">+</button>
+                           </div>
+                      )}
+
+                      {(activePlayer.tempMode.mode === 'major' || (activePlayer.tempMode.mode === 'reno_major' && activePlayer.houseType !== 'wood')) && (
+                          <div className="absolute top-12 left-0 z-50 flex flex-col gap-1 max-h-48 overflow-y-auto w-48 border border-stone-600 rounded bg-stone-900 p-1 scrollbar-thin shadow-xl">
+                              {gameState.majors.map(m => (
+                                  <button 
+                                    key={m.id} 
+                                    onClick={() => selectMajor(m.id)}
+                                    className={`text-left text-xs px-2 py-1 rounded flex justify-between items-center ${activePlayer.tempMode?.selectedMajorId === m.id ? 'bg-yellow-700 text-white' : 'hover:bg-stone-800 text-stone-300'}`}
+                                  >
+                                      <span>{m.name}</span>
+                                      <span className="text-[9px] opacity-70">{m.score}VP</span>
+                                  </button>
+                              ))}
+                              {gameState.majors.length === 0 && <span className="text-xs text-gray-500 italic p-1">No majors left</span>}
+                          </div>
+                      )}
+
+                      {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && activePlayer.houseType === 'wood' && (
+                          <button 
+                             onClick={renovate}
+                             className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold shadow text-[10px] leading-none"
+                          >
+                             Renovate
+                          </button>
+                      )}
+                      
+                      <div className="h-4 w-px bg-stone-600 mx-1"></div>
+
+                      <button 
+                          onClick={cancelMode} 
+                          className="px-3 py-1 bg-stone-700 hover:bg-stone-600 text-stone-300 rounded-full font-bold transition-colors text-[10px] uppercase tracking-wide"
+                      >
+                          Cancel
+                      </button>
+                      <button 
+                          onClick={() => confirmModeAction(activePlayer.id)} 
+                          className="px-4 py-1 bg-green-600 hover:bg-green-500 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition-all text-[10px] uppercase tracking-wide"
+                      >
+                          Confirm
+                      </button>
+                  </div>
+               </div>
+             </div>
+          )}
 
           <div className="flex items-center gap-2">
             <button onClick={() => setShowScoring(true)} className="px-3 py-1 bg-stone-700 hover:bg-stone-600 rounded text-xs border border-stone-600 transition-colors">
@@ -223,142 +350,6 @@ const App: React.FC = () => {
                    {viewingCard.type === 'cook' && <p className="text-xs text-orange-800 mt-2">Allows cooking animals into food.</p>}
                    {viewingCard.type === 'bake' && <p className="text-xs text-orange-800 mt-2">Allows baking grain into food.</p>}
                </div>
-           </div>
-        </div>
-      )}
-
-      {/* ACTION INTERACTION OVERLAY */}
-      {activePlayer.tempMode && activePlayer.type === 'human' && (
-        <div className="fixed bottom-0 left-0 right-0 bg-stone-800 border-t border-yellow-600 p-4 shadow-[0_-5px_20px_rgba(0,0,0,0.5)] z-40 animate-slideUp">
-           <div className="max-w-4xl mx-auto flex items-center justify-between">
-              
-              <div className="flex flex-col">
-                  <span className="text-xs text-yellow-500 uppercase font-bold tracking-wider">Current Action</span>
-                  <span className="text-xl font-bold text-white">
-                      {activePlayer.tempMode.mode === 'sow_bake_choice' ? 'Sow and/or Bake' : 
-                       activePlayer.tempMode.mode === 'simple' ? 'Confirm Action?' :
-                       actionDetails?.name || activePlayer.tempMode.mode}
-                  </span>
-                  
-                  <span className="text-sm text-stone-400 mt-1">
-                      {activePlayer.tempMode.mode === 'fence' && "Click between tiles to place fences. Form loops."}
-                      {activePlayer.tempMode.mode === 'build_menu' && "Click empty tiles to build Rooms/Stables."}
-                      {activePlayer.tempMode.mode === 'plow' && "Click empty tile to Plow."}
-                      {activePlayer.tempMode.mode === 'sow' && "Click fields to Sow grain/veg."}
-                  </span>
-              </div>
-
-              <div className="flex items-center gap-4">
-                  {activePlayer.tempMode.mode === 'build_menu' && (
-                      <div className="flex bg-stone-900 rounded p-1 gap-1">
-                          <button 
-                              onClick={() => switchTool('room')}
-                              className={`px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 ${activePlayer.tempMode.currentTool === 'room' ? 'bg-blue-600 text-white' : 'text-stone-400 hover:text-white'}`}
-                          >
-                              🏠 Room <span className="text-[10px] font-normal opacity-70">(5wd,2rd)</span>
-                          </button>
-                          <button 
-                              onClick={() => switchTool('stable')}
-                              className={`px-3 py-1.5 rounded text-sm font-bold flex items-center gap-2 ${activePlayer.tempMode.currentTool === 'stable' ? 'bg-orange-600 text-white' : 'text-stone-400 hover:text-white'}`}
-                          >
-                              🏚️ Stable <span className="text-[10px] font-normal opacity-70">(2wd)</span>
-                          </button>
-                      </div>
-                  )}
-
-                  {(activePlayer.tempMode.mode === 'sow' || activePlayer.tempMode.mode === 'plow_sow') && (
-                      <div className="flex bg-stone-900 rounded p-1 gap-1">
-                           <button 
-                              onClick={() => toggleSeed('grain')}
-                              className={`px-3 py-1.5 rounded text-sm font-bold ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'text-stone-400'}`}
-                           >
-                               🌾 Grain
-                           </button>
-                           <button 
-                              onClick={() => toggleSeed('veg')}
-                              className={`px-3 py-1.5 rounded text-sm font-bold ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'text-stone-400'}`}
-                           >
-                               🥕 Veg
-                           </button>
-                      </div>
-                  )}
-
-                  {activePlayer.tempMode.mode === 'sow_bake_choice' && (
-                      <div className="flex flex-col gap-2">
-                          <div className="flex bg-stone-900 rounded p-1 gap-1">
-                               <button onClick={() => setSubAction('sow')} className={`px-3 py-1 rounded text-xs ${activePlayer.tempMode.subAction==='sow'?'bg-green-600 text-white':'text-stone-500'}`}>Sow Only</button>
-                               <button onClick={() => setSubAction('bake')} className={`px-3 py-1 rounded text-xs ${activePlayer.tempMode.subAction==='bake'?'bg-orange-600 text-white':'text-stone-500'}`}>Bake Only</button>
-                               <button onClick={() => setSubAction('both')} className={`px-3 py-1 rounded text-xs ${activePlayer.tempMode.subAction==='both'?'bg-blue-600 text-white':'text-stone-500'}`}>Sow & Bake</button>
-                          </div>
-                          {(activePlayer.tempMode.subAction === 'sow' || activePlayer.tempMode.subAction === 'both') && (
-                              <div className="flex bg-stone-900 rounded p-1 gap-1 justify-center">
-                                   <button onClick={() => toggleSeed('grain')} className={`px-2 py-0.5 rounded text-[10px] ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'text-stone-400'}`}>🌾 Grain</button>
-                                   <button onClick={() => toggleSeed('veg')} className={`px-2 py-0.5 rounded text-[10px] ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'text-stone-400'}`}>🥕 Veg</button>
-                              </div>
-                          )}
-                          {(activePlayer.tempMode.subAction === 'bake' || activePlayer.tempMode.subAction === 'both') && (
-                              <div className="flex items-center gap-2 bg-stone-900 p-1 rounded">
-                                  <span className="text-xs text-orange-300">Bake:</span>
-                                  <button onClick={() => adjustBake(-1)} className="w-5 h-5 bg-stone-700 hover:bg-stone-600 rounded flex items-center justify-center">-</button>
-                                  <span className="text-white font-bold">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
-                                  <button onClick={() => adjustBake(1)} className="w-5 h-5 bg-stone-700 hover:bg-stone-600 rounded flex items-center justify-center">+</button>
-                                  <span className="text-[10px] text-gray-500">Grain</span>
-                              </div>
-                          )}
-                      </div>
-                  )}
-                  
-                  {activePlayer.tempMode.mode === 'bake' && (
-                       <div className="flex items-center gap-2 bg-stone-900 p-2 rounded">
-                          <span className="text-sm font-bold text-orange-300">Bake Grain:</span>
-                          <button onClick={() => adjustBake(-1)} className="w-6 h-6 bg-stone-700 hover:bg-stone-600 rounded flex items-center justify-center font-bold">-</button>
-                          <span className="text-xl font-bold text-white w-6 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
-                          <button onClick={() => adjustBake(1)} className="w-6 h-6 bg-stone-700 hover:bg-stone-600 rounded flex items-center justify-center font-bold">+</button>
-                       </div>
-                  )}
-
-                  {(activePlayer.tempMode.mode === 'major' || (activePlayer.tempMode.mode === 'reno_major' && activePlayer.houseType !== 'wood')) && (
-                      <div className="flex flex-col gap-1 max-h-32 overflow-y-auto w-64 border border-stone-600 rounded bg-stone-900 p-1">
-                          <span className="text-[10px] uppercase font-bold text-gray-500 mb-1">Select Improvement:</span>
-                          {gameState.majors.map(m => (
-                              <button 
-                                key={m.id} 
-                                onClick={() => selectMajor(m.id)}
-                                className={`text-left text-xs px-2 py-1 rounded flex justify-between items-center ${activePlayer.tempMode?.selectedMajorId === m.id ? 'bg-yellow-700 text-white' : 'hover:bg-stone-800 text-stone-300'}`}
-                              >
-                                  <span>{m.name}</span>
-                                  <span className="text-[10px] opacity-70">{m.score}VP</span>
-                              </button>
-                          ))}
-                          {gameState.majors.length === 0 && <span className="text-xs text-gray-500 italic p-1">No majors left</span>}
-                      </div>
-                  )}
-
-                  {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && activePlayer.houseType === 'wood' && (
-                      <button 
-                         onClick={renovate}
-                         className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded font-bold shadow-lg flex flex-col items-center leading-none"
-                      >
-                         <span className="text-sm">Renovate</span>
-                         <span className="text-[10px] opacity-80">to Clay</span>
-                      </button>
-                  )}
-                  
-                  <div className="h-8 w-px bg-stone-600 mx-2"></div>
-
-                  <button 
-                      onClick={cancelMode} 
-                      className="px-4 py-2 bg-stone-700 hover:bg-stone-600 text-stone-300 rounded font-bold transition-colors"
-                  >
-                      Cancel
-                  </button>
-                  <button 
-                      onClick={() => confirmModeAction(activePlayer.id)} 
-                      className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold shadow-lg transform hover:scale-105 transition-all"
-                  >
-                      Confirm
-                  </button>
-              </div>
            </div>
         </div>
       )}
