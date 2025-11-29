@@ -44,7 +44,9 @@ export interface HarvestConversion {
   sheep: number;
   boar: number;
   cow: number;
-  reed: number; // Added for Basketmaker
+  reed: number;
+  wood: number;
+  clay: number;
 }
 
 export type HarvestSubPhase = 'field' | 'feed' | 'breed' | null;

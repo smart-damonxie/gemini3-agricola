@@ -23,9 +23,9 @@ export const DB_MAJORS: MajorCard[] = [
   { id: 'm3', name: '🍲壁炉(4砖)', cost: { clay: 4 }, score: 1, type: 'cook', desc: '烤面包(3食), 变食:羊2/猪3/牛4/菜3', bakeRate: 3, cook: { sheep: 2, boar: 3, cow: 4, veg: 3 } },
   { id: 'm4', name: '🍲壁炉(5砖)', cost: { clay: 5 }, score: 1, type: 'cook', desc: '同上', bakeRate: 3, cook: { sheep: 2, boar: 3, cow: 4, veg: 3 } },
   { id: 'm5', name: '💧水井', cost: { stone: 3, wood: 1 }, score: 4, desc: '接下来5轮各放1食物，翻开时获得', special: 'well' },
-  { id: 'm6', name: '🧺芦苇工坊', cost: { reed: 2, stone: 2 }, score: 2, desc: '芦苇换食/分 (结束时每2芦苇+1分)', special: 'bonus', bonusType: 'reed', convert: { reed: 1, food: 2 } },
-  { id: 'm7', name: '🪑木头工坊', cost: { wood: 2, stone: 2 }, score: 2, desc: '木头换食/分 (结束时每2木+1分)', special: 'bonus', bonusType: 'wood', convert: { wood: 1, food: 2 } },
-  { id: 'm8', name: '🧱砖头工坊', cost: { clay: 2, stone: 2 }, score: 2, desc: '砖头换食/分 (结束时每2砖+1分)', special: 'bonus', bonusType: 'clay', convert: { clay: 1, food: 2 } },
+  { id: 'm6', name: '🧺芦苇工坊', cost: { reed: 2, stone: 2 }, score: 2, desc: '喂养阶段:1芦苇->3食物 (Max 1)', special: 'bonus', bonusType: 'reed', convert: { reed: 1, food: 3 } },
+  { id: 'm7', name: '🪑木头工坊', cost: { wood: 2, stone: 2 }, score: 2, desc: '喂养阶段:1木->2食物 (Max 1)', special: 'bonus', bonusType: 'wood', convert: { wood: 1, food: 2 } },
+  { id: 'm8', name: '🧱砖头工坊', cost: { clay: 2, stone: 2 }, score: 2, desc: '喂养阶段:1砖->2食物 (Max 1)', special: 'bonus', bonusType: 'clay', convert: { clay: 1, food: 2 } },
   { id: 'm9', name: '🪨石造烤炉', cost: { stone: 3, clay: 1 }, score: 3, desc: '高效烤面包(2麦->8食)', type: 'bake', specialBake: { in: 2, out: 8 } },
   { id: 'm10', name: '🏺砖造烤炉', cost: { clay: 3, stone: 1 }, score: 2, desc: '高效烤面包(1麦->5食)', type: 'bake', specialBake: { in: 1, out: 5 } },
 ];

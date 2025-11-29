@@ -18,6 +18,7 @@ interface Props {
   // Overflow props
   isOverflowing?: boolean;
   onDiscard?: (type: 'sheep'|'boar'|'cow') => void;
+  onCook?: (type: 'sheep'|'boar'|'cow') => void;
   onConfirmOverflow?: () => void;
 }
 
@@ -30,7 +31,7 @@ const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
 const PlayerPanel: React.FC<Props> = ({ 
     player, isActive, isNextStart, 
     onFarmClick, onFenceClick, onMajorClick, onConvertClick, onAdjustClick,
-    isOverflowing, onDiscard, onConfirmOverflow
+    isOverflowing, onDiscard, onCook, onConfirmOverflow
 }) => {
   const allocation = calculateAllocation(player);
   const score = calculateScore(player);
@@ -43,17 +44,14 @@ const PlayerPanel: React.FC<Props> = ({
   const canConvert = isActive && player.type === 'human' && !isOverflowing;
   const canAdjust = player.type === 'human';
 
-  // Capacity Map: Only assign capacity to the "primary" (smallest index) tile of a pasture
   const capacities: {[key:number]: {current:number, max:number}} = {};
   
   const countAnimalsInAlloc = (tIdx: number) => allocation.distribution[tIdx].filter(x => x.type === 'ani').length;
 
   layout.pastures.forEach(p => {
       if (p.tiles.length === 0) return;
-      const primaryTile = Math.min(...p.tiles); // Smallest index is the "label holder"
-      
+      const primaryTile = Math.min(...p.tiles); 
       const totalAnimals = p.tiles.reduce((sum, t) => sum + countAnimalsInAlloc(t), 0);
-      
       p.tiles.forEach(t => {
           if (t === primaryTile) {
               capacities[t] = { current: totalAnimals, max: p.capacity };
@@ -65,12 +63,8 @@ const PlayerPanel: React.FC<Props> = ({
       capacities[s.idx] = { current: countAnimalsInAlloc(s.idx), max: s.capacity };
   });
 
-  // Calculate Actual Overflow Count for Display
   const overflowCounts = { sheep: 0, boar: 0, cow: 0 };
   if (allocation.overflow > 0) {
-      // Very rough estimate of which animals are overflow. 
-      // The allocation logic just tells us 'total' overflow.
-      // We know how many are assigned.
       let assignedSheep = 0, assignedBoar = 0, assignedCow = 0;
       allocation.distribution.flat().forEach(i => {
           if (i.icon === '🐑') assignedSheep++;
@@ -81,6 +75,16 @@ const PlayerPanel: React.FC<Props> = ({
       overflowCounts.boar = Math.max(0, player.animals.boar - assignedBoar);
       overflowCounts.cow = Math.max(0, player.animals.cow - assignedCow);
   }
+  
+  // Cooking check for overflow
+  const canCookOverflow = onCook && player.majors.some(m => m.cook);
+  const getCookRate = (type: 'sheep'|'boar'|'cow') => {
+      let rate = 0;
+      player.majors.forEach(m => {
+          if (m.cook && m.cook[type] > rate) rate = m.cook[type];
+      });
+      return rate;
+  };
 
   return (
     <div 
@@ -126,14 +130,32 @@ const PlayerPanel: React.FC<Props> = ({
 
       {/* OVERFLOW WARNING SECTION */}
       {isOverflowing && allocation.overflow > 0 && (
-          <div className="bg-red-900/80 border border-red-500 p-2 rounded mb-2 flex justify-between items-center animate-bounce-short">
-              <div className="flex gap-2 items-center">
-                  <span className="text-white font-bold text-xs">⚠️ Overflow! Discard:</span>
-                  {overflowCounts.sheep > 0 && <button onClick={() => onDiscard && onDiscard('sheep')} className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-xs">🐑 {overflowCounts.sheep}</button>}
-                  {overflowCounts.boar > 0 && <button onClick={() => onDiscard && onDiscard('boar')} className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-xs">🐗 {overflowCounts.boar}</button>}
-                  {overflowCounts.cow > 0 && <button onClick={() => onDiscard && onDiscard('cow')} className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-xs">🐮 {overflowCounts.cow}</button>}
+          <div className="bg-red-900/80 border border-red-500 p-2 rounded mb-2 flex flex-col gap-1 animate-bounce-short">
+              <div className="flex gap-2 items-center text-xs font-bold text-white mb-1">
+                  <span>⚠️ Overflow! Manage Animals:</span>
               </div>
-              <div className="text-[10px] text-red-200">Adjust or Discard to proceed</div>
+              
+              <div className="flex flex-wrap gap-2 items-center">
+                  {overflowCounts.sheep > 0 && (
+                      <div className="flex items-center gap-1 bg-black/20 rounded p-0.5">
+                          <button onClick={() => onDiscard && onDiscard('sheep')} className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-xs border border-red-500">Discard 🐑</button>
+                          {canCookOverflow && <button onClick={() => onCook && onCook('sheep')} className="px-2 py-0.5 bg-orange-600 hover:bg-orange-500 rounded text-xs border border-orange-400 font-bold">Cook (+{getCookRate('sheep')}🍖)</button>}
+                      </div>
+                  )}
+                  {overflowCounts.boar > 0 && (
+                      <div className="flex items-center gap-1 bg-black/20 rounded p-0.5">
+                          <button onClick={() => onDiscard && onDiscard('boar')} className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-xs border border-red-500">Discard 🐗</button>
+                          {canCookOverflow && <button onClick={() => onCook && onCook('boar')} className="px-2 py-0.5 bg-orange-600 hover:bg-orange-500 rounded text-xs border border-orange-400 font-bold">Cook (+{getCookRate('boar')}🍖)</button>}
+                      </div>
+                  )}
+                  {overflowCounts.cow > 0 && (
+                      <div className="flex items-center gap-1 bg-black/20 rounded p-0.5">
+                          <button onClick={() => onDiscard && onDiscard('cow')} className="px-2 py-0.5 bg-red-700 hover:bg-red-600 rounded text-xs border border-red-500">Discard 🐮</button>
+                          {canCookOverflow && <button onClick={() => onCook && onCook('cow')} className="px-2 py-0.5 bg-orange-600 hover:bg-orange-500 rounded text-xs border border-orange-400 font-bold">Cook (+{getCookRate('cow')}🍖)</button>}
+                      </div>
+                  )}
+              </div>
+              <div className="text-[10px] text-red-200 mt-1">Adjust pens or remove excess animals to proceed.</div>
           </div>
       )}
       

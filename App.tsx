@@ -1,6 +1,5 @@
 
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -42,6 +41,7 @@ const App: React.FC = () => {
     startGame,
     adjustBake,
     discardAnimal,
+    cookOverflow,
     confirmOverflowEndTurn,
     debug
   } = useGameLogic();
@@ -86,13 +86,19 @@ const App: React.FC = () => {
   };
 
   // Helper to check conversion capability
-  const canConvert = (res: 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed') => {
+  const canConvert = (res: 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed'|'wood'|'clay') => {
       if (res === 'grain' || res === 'veg') return true; // Always allowed 1:1 raw
       if (['sheep', 'boar', 'cow'].includes(res)) {
           return activePlayer.majors.some(m => m.cook && m.cook[res as 'sheep'|'boar'|'cow']);
       }
       if (res === 'reed') {
           return activePlayer.majors.some(m => m.id === 'm6');
+      }
+      if (res === 'wood') {
+          return activePlayer.majors.some(m => m.id === 'm7');
+      }
+      if (res === 'clay') {
+          return activePlayer.majors.some(m => m.id === 'm8');
       }
       return false;
   };
@@ -343,6 +349,7 @@ const App: React.FC = () => {
                onAdjustClick={p.type === 'human' ? toggleAnimalManager : undefined}
                isOverflowing={gameState.turnPhase === 'overflow' && gameState.overflowPlayer === p.id}
                onDiscard={p.type === 'human' ? discardAnimal : undefined}
+               onCook={p.type === 'human' ? cookOverflow : undefined}
                onConfirmOverflow={p.type === 'human' ? confirmOverflowEndTurn : undefined}
              />
            ))}
@@ -392,22 +399,24 @@ const App: React.FC = () => {
                          </div>
                          <div className="grid grid-cols-2 gap-4">
                              <div className="text-center"><div className="text-sm text-gray-400">Available</div><div className="text-xl font-bold text-yellow-500">{activePlayer.res.food}</div></div>
-                             <div className="text-center"><div className="text-sm text-gray-400">Potential Gain</div><div className="text-xl font-bold text-green-500">+{ (activePlayer.harvestTemp?.grain||0) + (activePlayer.harvestTemp?.veg||0) + (activePlayer.harvestTemp?.sheep||0)*2 + (activePlayer.harvestTemp?.boar||0)*2 + (activePlayer.harvestTemp?.cow||0)*3 + (activePlayer.harvestTemp?.reed||0)*2 }</div></div>
+                             <div className="text-center"><div className="text-sm text-gray-400">Potential Gain</div><div className="text-xl font-bold text-green-500">+{ (activePlayer.harvestTemp?.grain||0) + (activePlayer.harvestTemp?.veg||0) + (activePlayer.harvestTemp?.sheep||0)*2 + (activePlayer.harvestTemp?.boar||0)*2 + (activePlayer.harvestTemp?.cow||0)*3 + (activePlayer.harvestTemp?.reed||0)*3 + (activePlayer.harvestTemp?.wood||0)*2 + (activePlayer.harvestTemp?.clay||0)*2 }</div></div>
                          </div>
                          <div className="space-y-2">
                              <div className="text-sm font-bold text-gray-300">Convert Resources:</div>
-                             {['grain','veg','sheep','boar','cow', 'reed'].map(res => {
-                                 const resKey = res as 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed';
+                             {['grain','veg','sheep','boar','cow', 'reed', 'wood', 'clay'].map(res => {
+                                 const resKey = res as 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed'|'wood'|'clay';
                                  let owned = 0;
                                  if (resKey === 'grain') owned = activePlayer.res.grain;
                                  else if (resKey === 'veg') owned = activePlayer.res.veg;
                                  else if (resKey === 'reed') owned = activePlayer.res.reed;
+                                 else if (resKey === 'wood') owned = activePlayer.res.wood;
+                                 else if (resKey === 'clay') owned = activePlayer.res.clay;
                                  else owned = activePlayer.animals[resKey as 'sheep'|'boar'|'cow'];
                                  
                                  const allowed = canConvert(resKey);
 
-                                 if (owned === 0 && !allowed) return null; // Hide if 0 and not allowed to reduce clutter? Or show disabled. Better show all but handle reed logic.
-                                 if (resKey === 'reed' && !allowed && owned === 0) return null; // Hide Reed row if no basketmaker
+                                 if (owned === 0 && !allowed) return null; 
+                                 if ((resKey === 'reed' || resKey === 'wood' || resKey === 'clay') && !allowed) return null; 
 
                                  return (
                                      <div key={res} className={`flex justify-between items-center bg-stone-900 p-2 rounded ${!allowed ? 'opacity-50' : ''}`}>
