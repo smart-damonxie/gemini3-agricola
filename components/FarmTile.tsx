@@ -1,4 +1,5 @@
 
+
 import React from 'react';
 import { Player } from '../types';
 
@@ -108,10 +109,10 @@ const FarmTile: React.FC<Props> = ({ p, idx, content, capacity, onClick, onFence
       {/* Fence Click Zones (Only if onFenceClick is provided) */}
       {onFenceClick && (
           <>
-            <div className={`${fenceZoneBase} top-[-8px] left-0 right-0 h-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('t'); }} title="Build Top Fence" />
-            <div className={`${fenceZoneBase} bottom-[-8px] left-0 right-0 h-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('b'); }} title="Build Bottom Fence" />
-            <div className={`${fenceZoneBase} top-0 bottom-0 left-[-8px] w-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('l'); }} title="Build Left Fence" />
-            <div className={`${fenceZoneBase} top-0 bottom-0 right-[-8px] w-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('r'); }} title="Build Right Fence" />
+            <div className={`${fenceZoneBase} top-[-8px] left-0 right-0 h-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('t'); }} title="Build Fence" />
+            <div className={`${fenceZoneBase} bottom-[-8px] left-0 right-0 h-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('b'); }} title="Build Fence" />
+            <div className={`${fenceZoneBase} top-0 bottom-0 left-[-8px] w-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('l'); }} title="Build Fence" />
+            <div className={`${fenceZoneBase} top-0 bottom-0 right-[-8px] w-5`} onClick={(e) => { e.stopPropagation(); onFenceClick('r'); }} title="Build Fence" />
           </>
       )}
     </div>

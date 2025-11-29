@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType } from '../types';
-import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES } from '../constants';
+import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES, LIMIT_FENCES } from '../constants';
 import { calculateAllocation, hasNeighbor, validateFenceRules, getFenceVertices } from '../utils/gameLogic';
 import { getAIAction, aiDiscardOverflow } from '../utils/aiStrategy';
 
@@ -307,13 +307,20 @@ export const useGameLogic = () => {
             });
         }
         
+        // Clean up icons for resources that have been distributed
+        const newFutureRes = { ...gs.futureResources };
+        if (newFutureRes[nextRound]) {
+            delete newFutureRes[nextRound];
+        }
+
         updateGameState(prev => ({
             ...prev,
             round: nextRound,
             deck: newDeck,
             roundCards: newRoundCards,
             startPlayer: prev.nextStartPlayer,
-            turnIdx: 0
+            turnIdx: 0,
+            futureResources: newFutureRes
         }));
 
         if (unlockedName && loggedRoundRef.current < nextRound) {
@@ -1287,7 +1294,22 @@ export const useGameLogic = () => {
         if (mode !== 'fence' && mode !== 'reno_fence') return;
 
         updatePlayer(pId, pp => {
-             const key = `${tileIdx}-${side}`;
+             // Normalize fence keys to prevent duplicate/ambiguous fences at shared borders
+             let targetIdx = tileIdx;
+             let targetSide = side;
+
+             // Normalize Right -> Left of next tile (unless last column)
+             if (side === 'r' && tileIdx % 5 !== 4) {
+                 targetIdx = tileIdx + 1;
+                 targetSide = 'l';
+             }
+             // Normalize Bottom -> Top of below tile (unless last row)
+             if (side === 'b' && tileIdx < 10) {
+                 targetIdx = tileIdx + 5;
+                 targetSide = 't';
+             }
+
+             const key = `${targetIdx}-${targetSide}`;
              const newFences = new Set(pp.fences);
              const res = { ...pp.res };
 
@@ -1295,7 +1317,7 @@ export const useGameLogic = () => {
                  newFences.delete(key);
                  res.wood++;
              } else {
-                 if (res.wood > 0 && newFences.size < 15) {
+                 if (res.wood > 0 && newFences.size < LIMIT_FENCES) {
                      newFences.add(key);
                      res.wood--;
                  }
