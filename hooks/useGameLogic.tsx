@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES } from '../constants';
@@ -750,17 +751,16 @@ export const useGameLogic = () => {
          updateGameState(prev => ({ ...prev, pendingAction: { pIdx: p.id, timer: null, snapshot: JSON.stringify(snapshotObj), flags: {} } }));
 
          if (act.mode === 'sow') {
-             const baker = p.majors.some(m => m.bakeRate || m.specialBake);
-             if (baker) {
-                 // Unified Sow/Bake mode
-                 // Initialize bakeTemp to 0
-                 let defaultSeed: 'grain' | 'veg' | undefined;
-                 if (p.res.grain > 0) defaultSeed = 'grain';
-                 else if (p.res.veg > 0) defaultSeed = 'veg';
-                 else defaultSeed = 'grain';
-
-                 updatePlayer(p.id, pp => ({...pp, tempMode: { mode: 'sow_bake_choice', actId, bakeTemp: { grain: 0 }, currentSeed: defaultSeed } }));
-                 return;
+             // ALWAYS enter sow_bake_choice for the main Sow/Bake action, even if no baker
+             // The UI will handle disabling if no oven.
+             // Only for the specific 'r_sow' card which is "Sow/Bake".
+             if (act.id === 'r_sow') {
+                let defaultSeed: 'grain' | 'veg' | undefined;
+                if (p.res.grain > 0) defaultSeed = 'grain';
+                else if (p.res.veg > 0) defaultSeed = 'veg';
+                else defaultSeed = 'grain';
+                updatePlayer(p.id, pp => ({...pp, tempMode: { mode: 'sow_bake_choice', actId, bakeTemp: { grain: 0 }, currentSeed: defaultSeed } }));
+                return;
              }
          }
 
@@ -902,18 +902,18 @@ export const useGameLogic = () => {
                                  const rate = m.specialBake.out / m.specialBake.in;
                                  if (rate > bestRate) bestRate = rate;
                              } else if (m.bakeRate) {
-                                  // Fallback for generic bake rate
                                   if (m.bakeRate > bestRate) bestRate = m.bakeRate;
                              }
                          });
-                         // Default inefficient bake (fireplaces usually don't bake well, but Major m1/m2 say "Bake(2 food)")
-                         // m1/m2 have bakeRate: 2.
-                         if (bestRate === 0) bestRate = 2; // Assuming basic fireplace baking if no better oven
                          
-                         const foodGain = bakeAmt * bestRate;
-                         finalP.res.grain -= bakeAmt;
-                         finalP.res.food += foodGain;
-                         addLog(`${p.name} baked ${bakeAmt} grain -> ${foodGain} food`, p.color);
+                         if (bestRate === 0) {
+                             isValid = false; errMsg = "No oven/fireplace to bake!";
+                         } else {
+                            const foodGain = bakeAmt * bestRate;
+                            finalP.res.grain -= bakeAmt;
+                            finalP.res.food += foodGain;
+                            addLog(`${p.name} baked ${bakeAmt} grain -> ${foodGain} food`, p.color);
+                         }
                      }
                  }
              }

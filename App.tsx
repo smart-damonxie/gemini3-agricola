@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -66,7 +64,7 @@ const App: React.FC = () => {
   }
 
   const getActionDetails = (actId: string) => {
-    return BASE_ACTIONS.find(a => a.id === actId) || gameState.roundCards.find(a => a.id === actId);
+    return gameState.baseActions.find(a => a.id === actId) || gameState.roundCards.find(a => a.id === actId);
   };
 
   const isHumanHarvest = gameState.harvestPhase && activePlayer.type === 'human' && activePlayer.harvestTemp;
@@ -74,9 +72,7 @@ const App: React.FC = () => {
   const isHumanTurn = activePlayer.type === 'human' && !gameState.harvestPhase;
   const actionDetails = activePlayer.tempMode ? getActionDetails(activePlayer.tempMode.actId) : null;
   const humanPlayer = players.find(p => p.type === 'human');
-  const bakeMajorCard = activePlayer.tempMode?.mode === 'bake_immediate' 
-      ? activePlayer.majors.find(m => m.id === activePlayer.tempMode!.selectedMajorId) 
-      : null;
+  const hasBaker = activePlayer.majors.some(m => m.bakeRate || m.specialBake);
 
   const getStage = (r: number) => {
       if (r <= 4) return 1;
@@ -161,12 +157,19 @@ const App: React.FC = () => {
                                 <div className="w-px h-6 bg-stone-600"></div>
 
                                 {/* Bake Controls */}
-                                <div className="flex items-center gap-1 bg-stone-900 p-0.5 px-2 rounded-full border border-stone-600/50">
-                                    <span className="text-[10px] text-orange-400 font-bold mr-1">Bake:</span>
-                                    <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">-</button>
-                                    <span className="text-white font-bold text-[10px] w-4 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
-                                    <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">+</button>
-                                </div>
+                                {hasBaker ? (
+                                    <div className="flex items-center gap-1 bg-stone-900 p-0.5 px-2 rounded-full border border-stone-600/50">
+                                        <span className="text-[10px] text-orange-400 font-bold mr-1">Bake:</span>
+                                        <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">-</button>
+                                        <span className="text-white font-bold text-[10px] w-4 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
+                                        <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">+</button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1 bg-stone-900/50 p-0.5 px-2 rounded-full border border-stone-700/50 grayscale opacity-50 cursor-not-allowed" title="You need an oven/fireplace major improvement to bake bread">
+                                        <span className="text-[10px] text-gray-500 font-bold mr-1">Bake:</span>
+                                        <span className="text-xs text-gray-600">Needs Oven</span>
+                                    </div>
+                                )}
                             </div>
                         )}
                         
@@ -245,13 +248,13 @@ const App: React.FC = () => {
         {/* LEFT COLUMN: ACTIONS BOARD (Wider) */}
         <div className="lg:col-span-5 space-y-4">
           
-          {/* Section 1: Basic Actions */}
+          {/* Section 1: Basic Actions - UPDATED TO USE gameState.baseActions */}
           <div className="bg-stone-800/50 p-3 rounded-xl border border-stone-700 shadow-inner">
             <h2 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2 border-b border-stone-700 pb-1">
                 Base Actions
             </h2>
             <div className="grid grid-cols-2 gap-2">
-              {BASE_ACTIONS.map(act => (
+              {gameState.baseActions.map(act => (
                 <ActionSlot 
                   key={act.id} 
                   action={act} 
