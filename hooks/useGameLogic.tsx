@@ -1,4 +1,6 @@
 
+
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES } from '../constants';
@@ -46,7 +48,8 @@ export const useGameLogic = () => {
         gameOver: false,
         futureResources: {},
         turnPhase: 'action',
-        overflowPlayer: null
+        overflowPlayer: null,
+        wellRewards: {}
     });
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [floatText, setFloatText] = useState<{ id: number, text: string, x: number, y: number }[]>([]);
@@ -159,7 +162,8 @@ export const useGameLogic = () => {
             gameOver: false,
             futureResources: {},
             turnPhase: 'action',
-            overflowPlayer: null
+            overflowPlayer: null,
+            wellRewards: {}
         };
         
         stateRef.current.players = newPlayers;
@@ -240,11 +244,10 @@ export const useGameLogic = () => {
 
         const currentPs = stateRef.current.players;
         const newPlayers = currentPs.map(p => {
-            let foodBonus = 0;
-            if (p.majors.some(m => m.special === 'well')) foodBonus = 1;
+            // Well bonus is now handled in advanceRound via wellRewards, removed old implicit check
             return {
                 ...p,
-                res: { ...p.res, workers: p.res.maxWorkers, food: p.res.food + foodBonus }
+                res: { ...p.res, workers: p.res.maxWorkers }
             };
         });
         stateRef.current.players = newPlayers;
@@ -294,6 +297,16 @@ export const useGameLogic = () => {
         }
 
         const nextRound = gs.round + 1;
+
+        // --- Well Logic: Distribute Food ---
+        if (gs.wellRewards[nextRound]) {
+            const beneficiaries = gs.wellRewards[nextRound];
+            beneficiaries.forEach(pId => {
+                updatePlayer(pId, p => ({...p, res: {...p.res, food: p.res.food + 1}}));
+                const pName = stateRef.current.players[pId].name;
+                addLog(`${pName} got 1 food from Well`, '#29b6f6');
+            });
+        }
         
         updateGameState(prev => ({
             ...prev,
@@ -499,7 +512,7 @@ export const useGameLogic = () => {
         const pIdx = harvestState.queue[harvestState.currentIdx];
         const p = stateRef.current.players[pIdx];
         if (p.type === 'human') {
-            updatePlayer(p.id, pp => ({...pp, harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 }}));
+            updatePlayer(p.id, pp => ({...pp, harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0 }}));
         } else {
             aiHarvestFeed(p);
         }
@@ -589,7 +602,7 @@ export const useGameLogic = () => {
             updatePlayer(p.id, pp => ({
                 ...pp,
                 pendingBreeding: newborns,
-                harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 } 
+                harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0 } 
             }));
             setIsAdjustingAnimals(true);
         } else {
@@ -630,7 +643,12 @@ export const useGameLogic = () => {
         updatePlayer(pIdx, p => {
              if (!p.harvestTemp) return p;
              const val = p.harvestTemp[key];
-             const limit = key === 'grain' ? p.res.grain : key === 'veg' ? p.res.veg : p.animals[key];
+             let limit = 0;
+             if (key === 'grain') limit = p.res.grain;
+             else if (key === 'veg') limit = p.res.veg;
+             else if (key === 'reed') limit = p.res.reed;
+             else limit = p.animals[key];
+
              if (val + delta >= 0 && val + delta <= limit) return { ...p, harvestTemp: { ...p.harvestTemp, [key]: val + delta } };
              return p;
         });
@@ -639,7 +657,7 @@ export const useGameLogic = () => {
         const { harvestState } = stateRef.current.gameState;
         if (!harvestState) return;
         const pIdx = harvestState.queue[harvestState.currentIdx];
-        updatePlayer(pIdx, p => ({ ...p, harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 } }));
+        updatePlayer(pIdx, p => ({ ...p, harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0 } }));
     };
     const confirmHarvest = () => {
          const { harvestState, harvestSubPhase } = stateRef.current.gameState;
@@ -648,11 +666,38 @@ export const useGameLogic = () => {
          const p = stateRef.current.players[pIdx];
          if (!p.harvestTemp) return;
          const t = p.harvestTemp;
-         const cooker = p.majors.find(m => (m.type==='cook'||m.type==='bake') && m.cook);
-         let gain = t.grain + t.veg;
-         if (cooker && cooker.cook) { gain += t.sheep * cooker.cook.sheep + t.boar * cooker.cook.boar + t.cow * cooker.cook.cow; }
+         
+         let gain = t.grain + t.veg; // Base gain (Raw eating 1:1)
+
+         // Calculate max possible gain from animals based on owned cookers
+         // If player has multiple cookers, we assume they use the best one for each animal type
+         let maxSheepRate = 0;
+         let maxBoarRate = 0;
+         let maxCowRate = 0;
+
+         p.majors.forEach(m => {
+             if (m.cook) {
+                 if (m.cook.sheep > maxSheepRate) maxSheepRate = m.cook.sheep;
+                 if (m.cook.boar > maxBoarRate) maxBoarRate = m.cook.boar;
+                 if (m.cook.cow > maxCowRate) maxCowRate = m.cook.cow;
+             }
+         });
+
+         gain += t.sheep * maxSheepRate;
+         gain += t.boar * maxBoarRate;
+         gain += t.cow * maxCowRate;
+
+         // Reed Conversion (Basketmaker's Workshop)
+         const basket = p.majors.find(m => m.id === 'm6');
+         if (basket && basket.convert && basket.convert.food) {
+             gain += t.reed * basket.convert.food;
+         }
+
          const newP = { ...p, res: { ...p.res }, animals: { ...p.animals } };
-         newP.res.grain -= t.grain; newP.res.veg -= t.veg; newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; newP.res.food += gain; newP.harvestTemp = null; 
+         newP.res.grain -= t.grain; newP.res.veg -= t.veg; newP.res.reed -= t.reed;
+         newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; 
+         newP.res.food += gain; 
+         newP.harvestTemp = null; 
 
          if (harvestSubPhase === 'feed') {
              const need = newP.res.maxWorkers * 2;
@@ -672,7 +717,7 @@ export const useGameLogic = () => {
         const pIdx = (startPlayer + turnIdx) % 4;
         const p = stateRef.current.players[pIdx];
         if (p.conversionTemp) updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: null }));
-        else updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0 } }));
+        else updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0 } }));
     };
     const adjustConversion = (key: keyof HarvestConversion, delta: number) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
@@ -680,7 +725,11 @@ export const useGameLogic = () => {
         updatePlayer(pIdx, p => {
              if (!p.conversionTemp) return p;
              const val = p.conversionTemp[key];
-             const limit = key === 'grain' ? p.res.grain : key === 'veg' ? p.res.veg : p.animals[key];
+             let limit = 0;
+             if (key === 'grain') limit = p.res.grain;
+             else if (key === 'veg') limit = p.res.veg;
+             else if (key === 'reed') limit = p.res.reed;
+             else limit = p.animals[key];
              if (val + delta >= 0 && val + delta <= limit) return { ...p, conversionTemp: { ...p.conversionTemp, [key]: val + delta } };
              return p;
         });
@@ -691,11 +740,30 @@ export const useGameLogic = () => {
         const p = stateRef.current.players[pIdx];
         if (!p.conversionTemp) return;
         const t = p.conversionTemp;
-        const cooker = p.majors.find(m => (m.type==='cook'||m.type==='bake') && m.cook);
-        let gain = t.grain + t.veg; 
-        if (cooker && cooker.cook) gain += t.sheep * cooker.cook.sheep + t.boar * cooker.cook.boar + t.cow * cooker.cook.cow;
+        
+        let gain = t.grain + t.veg;
+        
+        let maxSheepRate = 0; let maxBoarRate = 0; let maxCowRate = 0;
+        p.majors.forEach(m => {
+            if (m.cook) {
+                if (m.cook.sheep > maxSheepRate) maxSheepRate = m.cook.sheep;
+                if (m.cook.boar > maxBoarRate) maxBoarRate = m.cook.boar;
+                if (m.cook.cow > maxCowRate) maxCowRate = m.cook.cow;
+            }
+        });
+
+        gain += t.sheep * maxSheepRate;
+        gain += t.boar * maxBoarRate;
+        gain += t.cow * maxCowRate;
+
+        const basket = p.majors.find(m => m.id === 'm6');
+        if (basket && basket.convert && basket.convert.food) {
+             gain += t.reed * basket.convert.food;
+        }
+
         const newP = { ...p, res: { ...p.res }, animals: { ...p.animals }, conversionTemp: null };
-        newP.res.grain -= t.grain; newP.res.veg -= t.veg; newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; newP.res.food += gain;
+        newP.res.grain -= t.grain; newP.res.veg -= t.veg; newP.res.reed -= t.reed;
+        newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; newP.res.food += gain;
         addLog(`${p.name} converted resources to +${gain} Food`, p.color);
         updatePlayer(pIdx, () => newP);
     };
@@ -944,6 +1012,28 @@ export const useGameLogic = () => {
                              finalP.majors = [...finalP.majors, card];
                              addLog(`${p.name} built ${card.name}`, p.color);
                              const newMajors = majors.filter(m => m.id !== mId);
+                             
+                             // --- WELL LOGIC UPDATE ---
+                             if (card.special === 'well') {
+                                // Distribute future food rewards for next 5 rounds
+                                const startR = stateRef.current.gameState.round + 1;
+                                const newWellRewards = { ...stateRef.current.gameState.wellRewards };
+                                const newFutureRes = { ...stateRef.current.gameState.futureResources };
+
+                                for(let r = startR; r < startR + 5; r++) {
+                                    if (r <= MAX_ROUNDS) {
+                                        // Update Logic Map
+                                        if (!newWellRewards[r]) newWellRewards[r] = [];
+                                        newWellRewards[r].push(pId);
+                                        
+                                        // Update Visuals (Future Resources)
+                                        if (!newFutureRes[r]) newFutureRes[r] = [];
+                                        newFutureRes[r] = [...newFutureRes[r], 'food'];
+                                    }
+                                }
+                                updateGameState(prev => ({...prev, wellRewards: newWellRewards, futureResources: newFutureRes}));
+                             }
+
                              updateGameState(prev => ({ ...prev, majors: newMajors }));
 
                              // IMMEDIATE BAKE TRIGGER

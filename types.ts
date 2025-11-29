@@ -44,6 +44,7 @@ export interface HarvestConversion {
   sheep: number;
   boar: number;
   cow: number;
+  reed: number; // Added for Basketmaker
 }
 
 export type HarvestSubPhase = 'field' | 'feed' | 'breed' | null;
@@ -118,6 +119,7 @@ export interface GameState {
   futureResources: { [roundIdx: number]: ResourceType[] }; // roundIdx 0-13 (Round 1-14)
   turnPhase: 'action' | 'overflow';
   overflowPlayer: number | null;
+  wellRewards: { [round: number]: number[] }; // round -> playerIds to award food
 }
 
 export interface LogEntry {

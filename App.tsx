@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -81,6 +83,18 @@ const App: React.FC = () => {
       if (r <= 11) return 4;
       if (r <= 13) return 5;
       return 6;
+  };
+
+  // Helper to check conversion capability
+  const canConvert = (res: 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed') => {
+      if (res === 'grain' || res === 'veg') return true; // Always allowed 1:1 raw
+      if (['sheep', 'boar', 'cow'].includes(res)) {
+          return activePlayer.majors.some(m => m.cook && m.cook[res as 'sheep'|'boar'|'cow']);
+      }
+      if (res === 'reed') {
+          return activePlayer.majors.some(m => m.id === 'm6');
+      }
+      return false;
   };
 
   return (
@@ -378,23 +392,34 @@ const App: React.FC = () => {
                          </div>
                          <div className="grid grid-cols-2 gap-4">
                              <div className="text-center"><div className="text-sm text-gray-400">Available</div><div className="text-xl font-bold text-yellow-500">{activePlayer.res.food}</div></div>
-                             <div className="text-center"><div className="text-sm text-gray-400">Potential Gain</div><div className="text-xl font-bold text-green-500">+{ (activePlayer.harvestTemp?.grain||0) + (activePlayer.harvestTemp?.veg||0) + (activePlayer.harvestTemp?.sheep||0)*2 + (activePlayer.harvestTemp?.boar||0)*2 + (activePlayer.harvestTemp?.cow||0)*3 }</div></div>
+                             <div className="text-center"><div className="text-sm text-gray-400">Potential Gain</div><div className="text-xl font-bold text-green-500">+{ (activePlayer.harvestTemp?.grain||0) + (activePlayer.harvestTemp?.veg||0) + (activePlayer.harvestTemp?.sheep||0)*2 + (activePlayer.harvestTemp?.boar||0)*2 + (activePlayer.harvestTemp?.cow||0)*3 + (activePlayer.harvestTemp?.reed||0)*2 }</div></div>
                          </div>
                          <div className="space-y-2">
                              <div className="text-sm font-bold text-gray-300">Convert Resources:</div>
-                             {['grain','veg','sheep','boar','cow'].map(res => {
-                                 const resKey = res as 'grain'|'veg'|'sheep'|'boar'|'cow';
-                                 const owned = resKey === 'grain' ? activePlayer.res.grain : resKey === 'veg' ? activePlayer.res.veg : activePlayer.animals[resKey as 'sheep'|'boar'|'cow'];
+                             {['grain','veg','sheep','boar','cow', 'reed'].map(res => {
+                                 const resKey = res as 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed';
+                                 let owned = 0;
+                                 if (resKey === 'grain') owned = activePlayer.res.grain;
+                                 else if (resKey === 'veg') owned = activePlayer.res.veg;
+                                 else if (resKey === 'reed') owned = activePlayer.res.reed;
+                                 else owned = activePlayer.animals[resKey as 'sheep'|'boar'|'cow'];
+                                 
+                                 const allowed = canConvert(resKey);
+
+                                 if (owned === 0 && !allowed) return null; // Hide if 0 and not allowed to reduce clutter? Or show disabled. Better show all but handle reed logic.
+                                 if (resKey === 'reed' && !allowed && owned === 0) return null; // Hide Reed row if no basketmaker
+
                                  return (
-                                     <div key={res} className="flex justify-between items-center bg-stone-900 p-2 rounded">
+                                     <div key={res} className={`flex justify-between items-center bg-stone-900 p-2 rounded ${!allowed ? 'opacity-50' : ''}`}>
                                          <div className="flex flex-col">
                                             <span className="capitalize text-stone-300 w-20 font-bold">{res}</span>
                                             <span className="text-[10px] text-stone-500">You have: {owned}</span>
+                                            {!allowed && <span className="text-[9px] text-red-400">Needs Improvement</span>}
                                          </div>
                                          <div className="flex items-center gap-3">
-                                             <button onClick={() => adjustHarvest(resKey, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">-</button>
+                                             <button disabled={!allowed} onClick={() => adjustHarvest(resKey, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
                                              <span className="w-8 text-center font-bold">{(activePlayer.harvestTemp as any)[res]}</span>
-                                             <button onClick={() => adjustHarvest(resKey, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">+</button>
+                                             <button disabled={!allowed} onClick={() => adjustHarvest(resKey, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-50 disabled:cursor-not-allowed">+</button>
                                          </div>
                                      </div>
                                  );
