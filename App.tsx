@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -39,7 +38,6 @@ const App: React.FC = () => {
     toggleAnimalManager,
     saveAnimalAssignment,
     startGame,
-    setSubAction,
     adjustBake,
     discardAnimal,
     confirmOverflowEndTurn,
@@ -141,26 +139,24 @@ const App: React.FC = () => {
                           </div>
                       )}
 
+                      {/* Unified Sow/Bake UI - Shows BOTH controls if player has oven */}
                       {activePlayer.tempMode.mode === 'sow_bake_choice' && (
-                          <div className="flex gap-2 items-center">
-                              <div className="flex bg-stone-900 rounded-full p-0.5 gap-0.5">
-                                   <button onClick={() => setSubAction('sow')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.subAction==='sow'?'bg-green-600 text-white':'text-stone-500'}`}>Sow</button>
-                                   <button onClick={() => setSubAction('bake')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.subAction==='bake'?'bg-orange-600 text-white':'text-stone-500'}`}>Bake</button>
-                                   <button onClick={() => setSubAction('both')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.subAction==='both'?'bg-blue-600 text-white':'text-stone-500'}`}>Both</button>
+                          <div className="flex gap-4 items-center">
+                              {/* Sow Controls */}
+                              <div className="flex bg-stone-900 rounded-full p-0.5 gap-1 border border-stone-600/50">
+                                   <button onClick={() => toggleSeed('grain')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'text-stone-400'}`}>🌾 Grain</button>
+                                   <button onClick={() => toggleSeed('veg')} className={`px-2 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'text-stone-400'}`}>🥕 Veg</button>
                               </div>
-                              {(activePlayer.tempMode.subAction === 'sow' || activePlayer.tempMode.subAction === 'both') && (
-                                  <div className="flex bg-stone-900 rounded-full p-0.5 gap-1">
-                                       <button onClick={() => toggleSeed('grain')} className={`px-1.5 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'text-stone-400'}`}>🌾</button>
-                                       <button onClick={() => toggleSeed('veg')} className={`px-1.5 py-0.5 rounded-full text-[10px] ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'text-stone-400'}`}>🥕</button>
-                                  </div>
-                              )}
-                              {(activePlayer.tempMode.subAction === 'bake' || activePlayer.tempMode.subAction === 'both') && (
-                                  <div className="flex items-center gap-0.5 bg-stone-900 p-0.5 px-1 rounded-full">
-                                      <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">-</button>
-                                      <span className="text-white font-bold text-[10px] w-3 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
-                                      <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">+</button>
-                                  </div>
-                              )}
+                              
+                              <div className="w-px h-6 bg-stone-600"></div>
+
+                              {/* Bake Controls */}
+                              <div className="flex items-center gap-1 bg-stone-900 p-0.5 px-2 rounded-full border border-stone-600/50">
+                                  <span className="text-[10px] text-orange-400 font-bold mr-1">Bake:</span>
+                                  <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">-</button>
+                                  <span className="text-white font-bold text-[10px] w-4 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
+                                  <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">+</button>
+                              </div>
                           </div>
                       )}
                       
@@ -368,20 +364,27 @@ const App: React.FC = () => {
                          </div>
                          <div className="grid grid-cols-2 gap-4">
                              <div className="text-center"><div className="text-sm text-gray-400">Available</div><div className="text-xl font-bold text-yellow-500">{activePlayer.res.food}</div></div>
-                             <div className="text-center"><div className="text-sm text-gray-400">Potential</div><div className="text-xl font-bold text-green-500">+{ (activePlayer.harvestTemp?.grain||0) + (activePlayer.harvestTemp?.veg||0) + (activePlayer.harvestTemp?.sheep||0)*2 + (activePlayer.harvestTemp?.boar||0)*2 + (activePlayer.harvestTemp?.cow||0)*3 }</div></div>
+                             <div className="text-center"><div className="text-sm text-gray-400">Potential Gain</div><div className="text-xl font-bold text-green-500">+{ (activePlayer.harvestTemp?.grain||0) + (activePlayer.harvestTemp?.veg||0) + (activePlayer.harvestTemp?.sheep||0)*2 + (activePlayer.harvestTemp?.boar||0)*2 + (activePlayer.harvestTemp?.cow||0)*3 }</div></div>
                          </div>
                          <div className="space-y-2">
                              <div className="text-sm font-bold text-gray-300">Convert Resources:</div>
-                             {['grain','veg','sheep','boar','cow'].map(res => (
-                                 <div key={res} className="flex justify-between items-center bg-stone-900 p-2 rounded">
-                                     <span className="capitalize text-stone-300 w-20">{res}</span>
-                                     <div className="flex items-center gap-3">
-                                         <button onClick={() => adjustHarvest(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">-</button>
-                                         <span className="w-8 text-center font-bold">{(activePlayer.harvestTemp as any)[res]}</span>
-                                         <button onClick={() => adjustHarvest(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">+</button>
+                             {['grain','veg','sheep','boar','cow'].map(res => {
+                                 const resKey = res as 'grain'|'veg'|'sheep'|'boar'|'cow';
+                                 const owned = resKey === 'grain' ? activePlayer.res.grain : resKey === 'veg' ? activePlayer.res.veg : activePlayer.animals[resKey as 'sheep'|'boar'|'cow'];
+                                 return (
+                                     <div key={res} className="flex justify-between items-center bg-stone-900 p-2 rounded">
+                                         <div className="flex flex-col">
+                                            <span className="capitalize text-stone-300 w-20 font-bold">{res}</span>
+                                            <span className="text-[10px] text-stone-500">You have: {owned}</span>
+                                         </div>
+                                         <div className="flex items-center gap-3">
+                                             <button onClick={() => adjustHarvest(resKey, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">-</button>
+                                             <span className="w-8 text-center font-bold">{(activePlayer.harvestTemp as any)[res]}</span>
+                                             <button onClick={() => adjustHarvest(resKey, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">+</button>
+                                         </div>
                                      </div>
-                                 </div>
-                             ))}
+                                 );
+                             })}
                          </div>
                      </div>
                  )}

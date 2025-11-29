@@ -1,3 +1,4 @@
+
 import { Action, MajorCard } from "./types";
 
 export const LIMIT_FENCES = 15;
@@ -47,7 +48,7 @@ export const BASE_ACTIONS: Action[] = [
 
 export const ROUND_CARDS_POOL: Action[] = [
   { id: 'r_sheep', name: '🐑 牧羊 (1羊)', acc: 1, cur: 1, type: 'res', res: 'sheep', stage: 1 },
-  { id: 'r_sow', name: '🌱 播种', type: 'special', mode: 'sow', stage: 1 },
+  { id: 'r_sow', name: '🌱 播种/烤面包', type: 'special', mode: 'sow', stage: 1 },
   { id: 'r_fences', name: '🚧 栅栏', type: 'special', mode: 'fence', stage: 1 },
   { id: 'r_major', name: '🏗️ 发展卡', type: 'special', mode: 'major', stage: 1 },
   { id: 'r_stone', name: '🪨 西部采石 (1石)', acc: 1, cur: 1, type: 'res', res: 'stone', stage: 2 },

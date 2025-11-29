@@ -1,5 +1,4 @@
 
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES } from '../constants';
@@ -685,21 +684,8 @@ export const useGameLogic = () => {
             return p;
         });
     };
-    const setSubAction = (sub: 'sow' | 'bake' | 'both') => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
-        updatePlayer(pIdx, p => {
-            if (!p.tempMode) return p;
-            const bakeTemp = (sub === 'bake' || sub === 'both') ? { grain: 0 } : undefined;
-            let defaultSeed: 'grain'|'veg'|undefined;
-             if (sub === 'sow' || sub === 'both') {
-                 if (p.res.grain > 0) defaultSeed = 'grain';
-                 else if (p.res.veg > 0) defaultSeed = 'veg';
-                 else defaultSeed = 'grain';
-             }
-            return { ...p, tempMode: { ...p.tempMode, subAction: sub, bakeTemp, currentSeed: defaultSeed, mode: (sub === 'bake') ? 'bake' : 'sow_bake_choice' } };
-        });
-    };
+    
+    // Removed setSubAction since we unified Sow/Bake logic
 
     const clickAction = (actId: string) => {
          const { startPlayer, turnIdx, occupied, roundCards } = stateRef.current.gameState;
@@ -725,7 +711,14 @@ export const useGameLogic = () => {
          if (act.mode === 'sow') {
              const baker = p.majors.some(m => m.bakeRate || m.specialBake);
              if (baker) {
-                 updatePlayer(p.id, pp => ({...pp, tempMode: { mode: 'sow_bake_choice', actId, subAction: 'sow' } }));
+                 // Unified Sow/Bake mode
+                 // Initialize bakeTemp to 0
+                 let defaultSeed: 'grain' | 'veg' | undefined;
+                 if (p.res.grain > 0) defaultSeed = 'grain';
+                 else if (p.res.veg > 0) defaultSeed = 'veg';
+                 else defaultSeed = 'grain';
+
+                 updatePlayer(p.id, pp => ({...pp, tempMode: { mode: 'sow_bake_choice', actId, bakeTemp: { grain: 0 }, currentSeed: defaultSeed } }));
                  return;
              }
          }
@@ -846,14 +839,14 @@ export const useGameLogic = () => {
                  if (!plowDone && !sowDone) { isValid = false; errMsg = "Must Plow or Sow!"; }
              }
              else if (mode === 'sow_bake_choice') {
-                 const sub = p.tempMode.subAction;
+                 // Unified check: Must Sow OR Bake
                  const countCrops = (pp: any) => pp.farmContent.filter((x:any) => x).length;
                  const sowDone = countCrops(finalP) > countCrops(snapP);
                  const bakeAmt = p.tempMode.bakeTemp?.grain || 0;
                  
-                 if (sub === 'sow' && !sowDone) { isValid = false; errMsg = "Must Sow!"; }
-                 if (sub === 'bake' && bakeAmt <= 0) { isValid = false; errMsg = "Must Bake!"; }
-                 if (sub === 'both' && !sowDone && bakeAmt <= 0) { isValid = false; errMsg = "Must Sow or Bake!"; }
+                 if (!sowDone && bakeAmt <= 0) {
+                     isValid = false; errMsg = "Must Sow or Bake!";
+                 }
                  
                  // Apply Bake Logic if valid
                  if (isValid && bakeAmt > 0) {
@@ -912,7 +905,7 @@ export const useGameLogic = () => {
                              const newMajors = majors.filter(m => m.id !== mId);
                              updateGameState(prev => ({ ...prev, majors: newMajors }));
 
-                             // IMMEDIATE BAKE TRIGGER (Only if we aren't already quitting or in a complex flow)
+                             // IMMEDIATE BAKE TRIGGER
                              if (card.type === 'bake' && finalP.res.grain > 0) {
                                 if (p.type === 'human') {
                                     // Occupy & Setup next step manually since we are returning early
@@ -1017,7 +1010,9 @@ export const useGameLogic = () => {
              const counts = [...pp.farmCounts];
              const content = [...pp.farmContent];
 
-             const isSowMode = mode === 'sow' || (mode === 'sow_bake_choice' && pp.tempMode?.subAction !== 'bake');
+             // Unified Sow Logic for 'sow' or 'sow_bake_choice'
+             // Note: In unified mode, subAction is no longer used to block sowing. Always allow sowing.
+             const isSowMode = mode === 'sow' || mode === 'sow_bake_choice';
              const isPlowSow = mode === 'plow_sow';
 
              if (isPlowSow) {
@@ -1036,6 +1031,20 @@ export const useGameLogic = () => {
                      }
                      nf[tileIdx] = 2;
                      return { ...pp, farm: nf };
+                 } 
+                 // Implement Plow Toggle for plow_sow too?
+                 // Usually tricky because clicking a new field might mean Sow.
+                 // But let's support removing if it has no content.
+                 else if (nf[tileIdx] === 2 && !content[tileIdx]) {
+                     const pending = stateRef.current.gameState.pendingAction;
+                     if (pending && pending.snapshot) {
+                         const snap = JSON.parse(pending.snapshot);
+                         if (snap.farm[tileIdx] === 0) {
+                             // It's a new field without content -> Undo Plow
+                             nf[tileIdx] = 0;
+                             return { ...pp, farm: nf };
+                         }
+                     }
                  }
              }
 
@@ -1088,21 +1097,33 @@ export const useGameLogic = () => {
                  }
              }
              
-             if (mode === 'plow' && nf[tileIdx] === 0) {
-                 const pending = stateRef.current.gameState.pendingAction;
-                 if (pending && pending.snapshot) {
-                     const snap = JSON.parse(pending.snapshot);
-                     if (nf.filter(x => x===2).length > snap.farm.filter((x:any)=>x===2).length) {
-                         addLog("Can only plow 1 field", "red");
-                         return pp;
+             if (mode === 'plow') {
+                 if (nf[tileIdx] === 0) {
+                     const pending = stateRef.current.gameState.pendingAction;
+                     if (pending && pending.snapshot) {
+                         const snap = JSON.parse(pending.snapshot);
+                         if (nf.filter(x => x===2).length > snap.farm.filter((x:any)=>x===2).length) {
+                             addLog("Can only plow 1 field", "red");
+                             return pp;
+                         }
+                         if (snap.farm.some((x:any)=>x===2) && !hasNeighbor({ ...pp, farm: snap.farm }, tileIdx, 2)) {
+                             addLog("New fields must be adjacent", "red");
+                             return pp;
+                         }
                      }
-                     if (snap.farm.some((x:any)=>x===2) && !hasNeighbor({ ...pp, farm: snap.farm }, tileIdx, 2)) {
-                         addLog("New fields must be adjacent", "red");
-                         return pp;
+                     nf[tileIdx] = 2;
+                     return { ...pp, farm: nf };
+                 } else if (nf[tileIdx] === 2) {
+                     // Plow Undo Toggle: If it was 0 in snapshot, set back to 0
+                     const pending = stateRef.current.gameState.pendingAction;
+                     if (pending && pending.snapshot) {
+                         const snap = JSON.parse(pending.snapshot);
+                         if (snap.farm[tileIdx] === 0) {
+                             nf[tileIdx] = 0;
+                             return { ...pp, farm: nf };
+                         }
                      }
                  }
-                 nf[tileIdx] = 2;
-                 return { ...pp, farm: nf };
              }
              
              return pp;
@@ -1181,7 +1202,8 @@ export const useGameLogic = () => {
         adjustHarvest, resetHarvest, confirmHarvest,
         toggleConversion, adjustConversion, confirmConversion,
         isAdjustingAnimals, toggleAnimalManager, saveAnimalAssignment,
-        startGame, setSubAction, adjustBake,
+        startGame, setSubAction: () => {}, // Deprecated
+        adjustBake,
         discardAnimal, confirmOverflowEndTurn,
         debug: { setGameState: debugSetState, setPlayers: debugSetPlayers, forceAction: debugForceAction, stateRef }
     };
