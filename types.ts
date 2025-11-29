@@ -105,6 +105,7 @@ export interface GameState {
   nextStartPlayer: number;
   turnIdx: number;
   occupied: { [key: string]: number }; // actionId -> playerId
+  baseActions: Action[]; // Dynamic state of base actions
   roundCards: Action[];
   deck: Action[];
   majors: MajorCard[];
