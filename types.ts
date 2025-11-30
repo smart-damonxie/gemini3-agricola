@@ -21,7 +21,7 @@ export interface MajorCard {
   cook?: { sheep: number; boar: number; cow: number; veg: number };
   bonusType?: ResourceType;
   convert?: { [key: string]: number };
-  specialBake?: { in: number; out: number };
+  specialBake?: { in: number; out: number; limit?: number };
 }
 
 export interface Action {
@@ -103,7 +103,7 @@ export interface TempMode {
   currentTool?: 'room' | 'stable';
   selectedMajorId?: string;
   subAction?: 'sow' | 'bake' | 'both' | 'plow'; // For Sow/Bake choice or Plow/Sow choice
-  bakeTemp?: { grain: number }; // For tracking baking
+  bakeTargets?: { [majorId: string]: number }; // Tracks grain assigned to specific baking majors
 }
 
 export interface GameState {

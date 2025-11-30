@@ -205,7 +205,7 @@ const App: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Unified Sow/Bake UI - Shows BOTH controls if player has oven */}
+                        {/* Unified Sow/Bake UI - SEPARATE APPLIANCES */}
                         {activePlayer.tempMode.mode === 'sow_bake_choice' && (
                             <div className="flex gap-4 items-center">
                                 {/* Sow Controls */}
@@ -218,11 +218,27 @@ const App: React.FC = () => {
 
                                 {/* Bake Controls */}
                                 {hasBaker ? (
-                                    <div className="flex items-center gap-1 bg-stone-900 p-0.5 px-2 rounded-full border border-stone-600/50">
-                                        <span className="text-[10px] text-orange-400 font-bold mr-1">Bake:</span>
-                                        <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">-</button>
-                                        <span className="text-white font-bold text-[10px] w-4 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
-                                        <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px]">+</button>
+                                    <div className="flex flex-col gap-1 items-start">
+                                        {activePlayer.majors.map(m => {
+                                            if (!m.bakeRate && !m.specialBake) return null;
+                                            const rateDisplay = m.specialBake 
+                                                ? `1🌾→${m.specialBake.out}🍖`
+                                                : `1🌾→${m.bakeRate}🍖`;
+                                            const limitDisplay = m.specialBake?.limit ? `Max ${m.specialBake.limit}` : '';
+                                            const count = activePlayer.tempMode?.bakeTargets?.[m.id] || 0;
+                                            
+                                            return (
+                                                <div key={m.id} className="flex items-center gap-2 bg-stone-900/80 px-2 py-0.5 rounded-full border border-stone-600/50">
+                                                    <span className="text-[10px] text-orange-200 font-bold">{m.name.substring(0, 10)}..</span>
+                                                    <span className="text-[9px] text-gray-400">{rateDisplay} {limitDisplay}</span>
+                                                    <div className="flex items-center ml-1">
+                                                        <button onClick={() => adjustBake(m.id, -1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px] font-bold">-</button>
+                                                        <span className="text-white font-bold text-[10px] w-5 text-center">{count}</span>
+                                                        <button onClick={() => adjustBake(m.id, 1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px] font-bold">+</button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
                                     </div>
                                 ) : (
                                     <div className="flex items-center gap-1 bg-stone-900/50 p-0.5 px-2 rounded-full border border-stone-700/50 grayscale opacity-50 cursor-not-allowed" title="You need an oven/fireplace major improvement to bake bread">
@@ -234,12 +250,28 @@ const App: React.FC = () => {
                         )}
                         
                         {/* IMMEDIATE BAKE UI */}
-                        {activePlayer.tempMode.mode === 'bake_immediate' && (
-                            <div className="flex items-center gap-2 bg-stone-900 p-0.5 px-2 rounded-full">
-                                <span className="text-[10px] font-bold text-orange-300">Grain:</span>
-                                <button onClick={() => adjustBake(-1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center font-bold text-[10px]">-</button>
-                                <span className="text-sm font-bold text-white w-4 text-center">{activePlayer.tempMode.bakeTemp?.grain || 0}</span>
-                                <button onClick={() => adjustBake(1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center font-bold text-[10px]">+</button>
+                        {activePlayer.tempMode.mode === 'bake_immediate' && activePlayer.tempMode.bakeTargets && (
+                            <div className="flex flex-col gap-1 items-center">
+                                {Object.entries(activePlayer.tempMode.bakeTargets).map(([mId, count]) => {
+                                    const m = activePlayer.majors.find(mj => mj.id === mId);
+                                    if (!m) return null;
+                                    const rateDisplay = m.specialBake 
+                                        ? `1🌾→${m.specialBake.out}🍖`
+                                        : `1🌾→${m.bakeRate}🍖`;
+                                    const limitDisplay = m.specialBake?.limit ? `Max ${m.specialBake.limit}` : '';
+
+                                    return (
+                                        <div key={m.id} className="flex items-center gap-2 bg-stone-900/80 px-2 py-0.5 rounded-full border border-orange-500">
+                                            <span className="text-[10px] text-orange-200 font-bold">{m.name}</span>
+                                            <span className="text-[9px] text-gray-400">{rateDisplay} {limitDisplay}</span>
+                                            <div className="flex items-center ml-1">
+                                                <button onClick={() => adjustBake(m.id, -1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px] font-bold">-</button>
+                                                <span className="text-white font-bold text-[10px] w-5 text-center">{count}</span>
+                                                <button onClick={() => adjustBake(m.id, 1)} className="w-4 h-4 bg-stone-700 hover:bg-stone-600 rounded-full flex items-center justify-center text-[10px] font-bold">+</button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
 

@@ -25,8 +25,8 @@ export const DB_MAJORS: MajorCard[] = [
   { id: 'm6', name: '🧺芦苇工坊', cost: { reed: 2, stone: 2 }, score: 2, desc: '喂养阶段:1芦苇->3食物 (Max 1)', special: 'bonus', bonusType: 'reed', convert: { reed: 1, food: 3 } },
   { id: 'm7', name: '🪑木头工坊', cost: { wood: 2, stone: 2 }, score: 2, desc: '喂养阶段:1木->2食物 (Max 1)', special: 'bonus', bonusType: 'wood', convert: { wood: 1, food: 2 } },
   { id: 'm8', name: '🧱砖头工坊', cost: { clay: 2, stone: 2 }, score: 2, desc: '喂养阶段:1砖->2食物 (Max 1)', special: 'bonus', bonusType: 'clay', convert: { clay: 1, food: 2 } },
-  { id: 'm9', name: '🪨石造烤炉', cost: { stone: 3, clay: 1 }, score: 3, desc: '高效烤面包(2麦->8食)', type: 'bake', specialBake: { in: 2, out: 8 } },
-  { id: 'm10', name: '🏺砖造烤炉', cost: { clay: 3, stone: 1 }, score: 2, desc: '高效烤面包(1麦->5食)', type: 'bake', specialBake: { in: 1, out: 5 } },
+  { id: 'm9', name: '🪨石造烤炉', cost: { stone: 3, clay: 1 }, score: 3, desc: '高效烤面包(Max 2: 1麦->4食)', type: 'bake', specialBake: { in: 1, out: 4, limit: 2 } },
+  { id: 'm10', name: '🏺砖造烤炉', cost: { clay: 3, stone: 1 }, score: 2, desc: '高效烤面包(Max 1: 1麦->5食)', type: 'bake', specialBake: { in: 1, out: 5, limit: 1 } },
 ];
 
 export const BASE_ACTIONS: Action[] = [

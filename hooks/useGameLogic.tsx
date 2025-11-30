@@ -807,10 +807,6 @@ export const useGameLogic = () => {
         processBreedPhase();
     };
 
-    const resolveBreeding = (p: Player) => {
-        // Legacy: kept for compatibility if needed, but logic moved to processBreedPhase direct update
-    };
-
     // --- Actions ---
     const adjustHarvest = (key: keyof HarvestConversion, delta: number) => {
         const { harvestState } = stateRef.current.gameState;
@@ -893,8 +889,6 @@ export const useGameLogic = () => {
              if (need - pay > 0) newP.begging += (need - pay);
              updatePlayer(pIdx, () => newP);
              scheduleNext(() => advanceFeedStep(), 200);
-         } else if (harvestSubPhase === 'breed') {
-             // resolveBreeding(newP); // No longer needed
          }
     };
     
@@ -985,14 +979,37 @@ export const useGameLogic = () => {
     };
 
     // Baking
-    const adjustBake = (delta: number) => {
+    const adjustBake = (majorId: string, delta: number) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         const pIdx = (startPlayer + turnIdx) % 4;
         updatePlayer(pIdx, p => {
-            if (!p.tempMode || !p.tempMode.bakeTemp) return p;
-            const current = p.tempMode.bakeTemp.grain;
-            const newVal = current + delta;
-            if (newVal >= 0 && newVal <= p.res.grain) return { ...p, tempMode: { ...p.tempMode, bakeTemp: { grain: newVal } }};
+            if (!p.tempMode || !p.tempMode.bakeTargets) return p;
+            
+            const currentTotalBake = Object.values(p.tempMode.bakeTargets).reduce((a, b) => a + b, 0);
+            const currentMajorBake = p.tempMode.bakeTargets[majorId] || 0;
+            const newVal = currentMajorBake + delta;
+            
+            // Check limits
+            const card = p.majors.find(m => m.id === majorId);
+            if (!card) return p;
+
+            // Individual card limit
+            if (card.specialBake && card.specialBake.limit) {
+                if (newVal > card.specialBake.limit) return p;
+            }
+
+            // Total grain limit
+            if (delta > 0 && currentTotalBake >= p.res.grain) return p;
+            
+            if (newVal >= 0) {
+                 return { 
+                     ...p, 
+                     tempMode: { 
+                         ...p.tempMode, 
+                         bakeTargets: { ...p.tempMode.bakeTargets, [majorId]: newVal } 
+                     }
+                 };
+            }
             return p;
         });
     };
@@ -1036,7 +1053,16 @@ export const useGameLogic = () => {
                 if (p.res.grain > 0) defaultSeed = 'grain';
                 else if (p.res.veg > 0) defaultSeed = 'veg';
                 else defaultSeed = 'grain';
-                updatePlayer(p.id, pp => ({...pp, tempMode: { mode: 'sow_bake_choice', actId, bakeTemp: { grain: 0 }, currentSeed: defaultSeed } }));
+                
+                // Init bake targets
+                const bakeTargets: {[key: string]: number} = {};
+                p.majors.forEach(m => {
+                    if (m.bakeRate || m.specialBake) {
+                        bakeTargets[m.id] = 0;
+                    }
+                });
+
+                updatePlayer(p.id, pp => ({...pp, tempMode: { mode: 'sow_bake_choice', actId, bakeTargets, currentSeed: defaultSeed } }));
                 return;
              }
          }
@@ -1076,23 +1102,37 @@ export const useGameLogic = () => {
          if (!p.tempMode) return;
 
          if (p.tempMode.mode === 'bake_immediate') {
-             const mId = p.tempMode.selectedMajorId;
-             const card = p.majors.find(m => m.id === mId);
-             
-             if (card && card.specialBake && p.tempMode.bakeTemp) {
-                 const grain = p.tempMode.bakeTemp.grain;
-                 const { in: inAmt, out: outAmt } = card.specialBake;
-                 if (grain > p.res.grain) {
-                     addLog("Not enough grain", "red");
+             if (p.tempMode.bakeTargets) {
+                 let totalCost = 0;
+                 let totalGain = 0;
+                 let inputsMsg: string[] = [];
+
+                 Object.entries(p.tempMode.bakeTargets).forEach(([mId, count]) => {
+                     if (count > 0) {
+                         const card = p.majors.find(m => m.id === mId);
+                         if (card) {
+                             let gain = 0;
+                             if (card.specialBake) {
+                                 const batches = count / card.specialBake.in; // integer division implicitly handled by logic? specialBake.in usually 1
+                                 gain = batches * card.specialBake.out;
+                             } else if (card.bakeRate) {
+                                 gain = count * card.bakeRate;
+                             }
+                             totalCost += count;
+                             totalGain += gain;
+                             inputsMsg.push(`${card.name}: ${count}g->${gain}f`);
+                         }
+                     }
+                 });
+
+                 if (totalCost > p.res.grain) {
+                     addLog("Not enough grain!", "red");
                      return;
                  }
-                 const batches = Math.floor(grain / inAmt);
-                 const cost = batches * inAmt;
-                 const gain = batches * outAmt;
                  
-                 if (cost > 0) {
-                     const finalP = { ...p, res: { ...p.res, grain: p.res.grain - cost, food: p.res.food + gain }, tempMode: null };
-                     addLog(`${p.name} baked ${cost} grain -> ${gain} food`, p.color);
+                 if (totalCost > 0) {
+                     const finalP = { ...p, res: { ...p.res, grain: p.res.grain - totalCost, food: p.res.food + totalGain }, tempMode: null };
+                     addLog(`${p.name} baked: ${inputsMsg.join(', ')}`, p.color);
                      updatePlayer(pId, () => finalP);
                  } else {
                      updatePlayer(pId, () => ({ ...p, tempMode: null }));
@@ -1144,47 +1184,55 @@ export const useGameLogic = () => {
              }
              else if (mode === 'reno_major') {
                   const renoDone = finalP.houseType !== snapP.houseType;
-                  const majorDone = p.tempMode.selectedMajorId;
-                  if (!renoDone && !majorDone) { isValid = false; errMsg = "Must Renovate or build Improvement!"; }
+                  if (!renoDone) { isValid = false; errMsg = "Must Renovate first!"; }
              }
              else if (mode === 'reno_fence') {
                   const renoDone = finalP.houseType !== snapP.houseType;
-                  const fenceDone = finalP.fences.size > snapP.fences.size;
-                  if (!renoDone && !fenceDone) { isValid = false; errMsg = "Must Renovate or build Fences!"; }
+                  if (!renoDone) { isValid = false; errMsg = "Must Renovate first!"; }
              }
              else if (mode === 'plow_sow') {
                  const plowDone = finalP.farm.filter((x:number) => x===2).length > snapP.farm.filter((x:any)=>x===2).length;
-                 // It is strictly required to PLOW. Sow is optional but only if Plowed.
                  if (!plowDone) { isValid = false; errMsg = "Must Plow first!"; }
              }
              else if (mode === 'sow_bake_choice') {
                  const countCrops = (pp: any) => pp.farmContent.filter((x:any) => x).length;
                  const sowDone = countCrops(finalP) > countCrops(snapP);
-                 const bakeAmt = p.tempMode.bakeTemp?.grain || 0;
-                 if (!sowDone && bakeAmt <= 0) {
+                 
+                 let totalBakeCost = 0;
+                 let totalBakeGain = 0;
+                 let bakeInputs: string[] = [];
+                 
+                 if (p.tempMode.bakeTargets) {
+                     Object.entries(p.tempMode.bakeTargets).forEach(([mId, count]) => {
+                         if (count > 0) {
+                             const card = p.majors.find(m => m.id === mId);
+                             if (card) {
+                                 let gain = 0;
+                                 if (card.specialBake) {
+                                     gain = (count / card.specialBake.in) * card.specialBake.out;
+                                 } else if (card.bakeRate) {
+                                     gain = count * card.bakeRate;
+                                 }
+                                 totalBakeCost += count;
+                                 totalBakeGain += gain;
+                                 bakeInputs.push(`${card.name}: ${count}`);
+                             }
+                         }
+                     });
+                 }
+                 
+                 const bakeDone = totalBakeCost > 0;
+                 if (!sowDone && !bakeDone) {
                      isValid = false; errMsg = "Must Sow or Bake!";
                  }
-                 if (isValid && bakeAmt > 0) {
-                     if (bakeAmt > finalP.res.grain) {
+                 
+                 if (isValid && bakeDone) {
+                     if (totalBakeCost > finalP.res.grain) {
                          isValid = false; errMsg = "Not enough grain!";
                      } else {
-                         let bestRate = 0; 
-                         finalP.majors.forEach(m => {
-                             if (m.specialBake && m.specialBake.in === 1) {
-                                 const rate = m.specialBake.out / m.specialBake.in;
-                                 if (rate > bestRate) bestRate = rate;
-                             } else if (m.bakeRate) {
-                                  if (m.bakeRate > bestRate) bestRate = m.bakeRate;
-                             }
-                         });
-                         if (bestRate === 0) {
-                             isValid = false; errMsg = "No oven/fireplace to bake!";
-                         } else {
-                            const foodGain = bakeAmt * bestRate;
-                            finalP.res.grain -= bakeAmt;
-                            finalP.res.food += foodGain;
-                            addLog(`${p.name} baked ${bakeAmt} grain -> ${foodGain} food`, p.color);
-                         }
+                         finalP.res.grain -= totalBakeCost;
+                         finalP.res.food += totalBakeGain;
+                         addLog(`${p.name} baked ${totalBakeCost} grain -> ${totalBakeGain} food`, p.color);
                      }
                  }
              }
@@ -1237,6 +1285,15 @@ export const useGameLogic = () => {
                                 if (p.type === 'human') {
                                     const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
                                     updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null }));
+                                    
+                                    // Init bake targets for ALL baking majors
+                                    const bakeTargets: {[key: string]: number} = {};
+                                    finalP.majors.forEach(m => {
+                                        if (m.bakeRate || m.specialBake) {
+                                            bakeTargets[m.id] = 0;
+                                        }
+                                    });
+                                    
                                     updatePlayer(pId, () => ({
                                         ...finalP,
                                         res: { ...finalP.res, workers: finalP.res.workers - 1 },
@@ -1244,13 +1301,19 @@ export const useGameLogic = () => {
                                             mode: 'bake_immediate', 
                                             actId: p.tempMode!.actId, 
                                             selectedMajorId: mId,
-                                            bakeTemp: { grain: 0 }
+                                            bakeTargets
                                         }
                                     }));
                                     return; 
                                 } else {
                                     const { in: inAmt, out: outAmt } = card.specialBake || { in: 1, out: 1 };
-                                    const batches = Math.floor(finalP.res.grain / inAmt);
+                                    const limit = card.specialBake?.limit || 999;
+                                    const maxPossible = Math.min(Math.floor(finalP.res.grain / inAmt), limit);
+                                    
+                                    // AI Strategy: Bake max possible immediately? Or maybe just 1?
+                                    // Let's assume AI bakes max possible for efficiency
+                                    const batches = maxPossible;
+                                    
                                     if (batches > 0) {
                                         const cost = batches * inAmt;
                                         const gain = batches * outAmt;
