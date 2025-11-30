@@ -43,6 +43,7 @@ const App: React.FC = () => {
     discardAnimal,
     cookOverflow,
     cookFromManager,
+    discardFromManager,
     confirmOverflowEndTurn,
     debug
   } = useGameLogic();
@@ -256,7 +257,7 @@ const App: React.FC = () => {
                             </div>
                         )}
 
-                        {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && activePlayer.houseType === 'wood' && (
+                        {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && activePlayer.houseType !== 'stone' && (
                             <button 
                                 onClick={renovate}
                                 className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold shadow text-[10px] leading-none"
@@ -404,6 +405,7 @@ const App: React.FC = () => {
               onClose={toggleAnimalManager} 
               onSave={saveAnimalAssignment} 
               onCook={cookFromManager}
+              onDiscard={discardFromManager}
               pendingBreeding={humanPlayer.pendingBreeding || undefined}
           />
       )}

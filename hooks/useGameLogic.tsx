@@ -463,6 +463,45 @@ export const useGameLogic = () => {
         });
     };
 
+    const discardFromManager = (type: 'sheep'|'boar'|'cow', isNewborn: boolean, assignments: { [key: number]: ResourceType[] }) => {
+        const { startPlayer, turnIdx } = stateRef.current.gameState;
+        let pIdx = (startPlayer + turnIdx) % 4;
+        
+        // Handle overflow/breed phase correct player context
+        if (stateRef.current.gameState.turnPhase === 'overflow' && stateRef.current.gameState.overflowPlayer !== null) {
+            pIdx = stateRef.current.gameState.overflowPlayer;
+        } else if (stateRef.current.gameState.harvestSubPhase === 'breed') {
+            const { harvestState } = stateRef.current.gameState;
+            if (harvestState) pIdx = harvestState.queue[harvestState.currentIdx];
+        }
+        
+        const p = stateRef.current.players[pIdx];
+
+        if (p.animals[type] <= 0) return;
+
+        updatePlayer(pIdx, pp => {
+            const newP = { 
+                ...pp, 
+                animals: { ...pp.animals }, 
+                newborns: { ...pp.newborns },
+                assignedAnimals: assignments // Persist current assignments
+            };
+            
+            newP.animals[type]--;
+            if (isNewborn && newP.newborns[type] > 0) {
+                newP.newborns[type]--;
+            } else if (!isNewborn) {
+                // If discarding adult, ensure we don't accidentally dip into newborns count if data was desynced
+                // (Though logic should prevent button click)
+            }
+            // Safety clamp
+            if (newP.newborns[type] > newP.animals[type]) newP.newborns[type] = newP.animals[type];
+            
+            return newP;
+        });
+        addLog(`${p.name} discarded a ${isNewborn ? 'newborn' : 'adult'} ${type}`, p.color);
+    };
+
     const cookOverflow = (type: 'sheep'|'boar'|'cow') => {
         const { overflowPlayer } = stateRef.current.gameState;
         if (overflowPlayer === null) return;
@@ -499,12 +538,15 @@ export const useGameLogic = () => {
         addLog(`${p.name} cooked overflow ${type} for ${bestRate} food`, p.color);
     };
 
-    const cookFromManager = (type: 'sheep'|'boar'|'cow') => {
+    const cookFromManager = (type: 'sheep'|'boar'|'cow', assignments: { [key: number]: ResourceType[] }) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         let pIdx = (startPlayer + turnIdx) % 4;
         
         if (stateRef.current.gameState.turnPhase === 'overflow' && stateRef.current.gameState.overflowPlayer !== null) {
             pIdx = stateRef.current.gameState.overflowPlayer;
+        } else if (stateRef.current.gameState.harvestSubPhase === 'breed') {
+            const { harvestState } = stateRef.current.gameState;
+            if (harvestState) pIdx = harvestState.queue[harvestState.currentIdx];
         }
         
         const p = stateRef.current.players[pIdx];
@@ -522,31 +564,17 @@ export const useGameLogic = () => {
         }
 
         // NEWBORN PROTECTION - Strict check
-        // If this function is called from AnimalManager during Breeding phase, 
-        // p.animals contains adults, but p.pendingBreeding contains newborns.
-        // Wait, p.newborns tracks newborns that were already placed?
-        // During breeding phase, p.newborns is 0. p.pendingBreeding holds them.
-        // So p.animals are strictly adults.
-        // So checking p.animals > 0 is actually sufficient during Breed Phase.
-        // BUT if this is called during Overflow phase where newborns might have been merged?
-        // resolveBreeding merges pending -> animals + newborns.
-        // So after resolve, we MUST check p.animals - p.newborns.
-        
         const availableToCook = p.animals[type] - p.newborns[type];
         if (availableToCook <= 0) {
-            // If in breeding phase (pendingBreeding exists), p.animals are all adults.
-            if (p.pendingBreeding && p.animals[type] > 0) {
-                 // Safe to cook
-            } else {
-                 addLog("Cannot cook newborn animals!", "red");
-                 return;
-            }
+             addLog("Cannot cook newborn animals!", "red");
+             return;
         }
 
         updatePlayer(pIdx, pp => ({
             ...pp,
             animals: { ...pp.animals, [type]: pp.animals[type] - 1 },
-            res: { ...pp.res, food: pp.res.food + bestRate }
+            res: { ...pp.res, food: pp.res.food + bestRate },
+            assignedAnimals: assignments // Persist current assignments
         }));
         addLog(`${p.name} cooked ${type} for ${bestRate} food`, p.color);
     };
@@ -1368,10 +1396,17 @@ export const useGameLogic = () => {
              if (mode === 'build_menu') {
                   if (nf[tileIdx] === 0) {
                      if (pp.tempMode?.currentTool === 'room') {
-                         if (res.wood >= 5 && res.reed >= 2) {
+                         // Determine cost based on current house type
+                         let costRes: 'wood' | 'clay' | 'stone' = 'wood';
+                         if (pp.houseType === 'clay') costRes = 'clay';
+                         if (pp.houseType === 'stone') costRes = 'stone';
+
+                         if (res[costRes] >= 5 && res.reed >= 2) {
                              if (!hasNeighbor(pp, tileIdx, 1) && pp.farm.some(x=>x===1)) { return pp; }
-                             res.wood -= 5; res.reed -= 2; nf[tileIdx] = 1;
+                             res[costRes] -= 5; res.reed -= 2; nf[tileIdx] = 1;
                              return { ...pp, farm: nf, res };
+                         } else {
+                             addLog(`Need 5 ${costRes} and 2 reed`, 'red');
                          }
                      }
                      else if (pp.tempMode?.currentTool === 'stable') {
@@ -1539,6 +1574,7 @@ export const useGameLogic = () => {
         discardAnimal,
         cookOverflow,
         cookFromManager,
+        discardFromManager,
         confirmOverflowEndTurn,
         debug,
     };

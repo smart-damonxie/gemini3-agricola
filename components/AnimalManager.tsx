@@ -7,7 +7,8 @@ interface Props {
     player: Player;
     onClose: () => void;
     onSave: (assignments: { [key: number]: ResourceType[] }) => void;
-    onCook?: (type: 'sheep'|'boar'|'cow') => void;
+    onCook?: (type: 'sheep'|'boar'|'cow', assignments: { [key: number]: ResourceType[] }) => void;
+    onDiscard?: (type: 'sheep'|'boar'|'cow', isNewborn: boolean, assignments: { [key: number]: ResourceType[] }) => void;
     pendingBreeding?: { sheep: number, boar: number, cow: number };
 }
 
@@ -19,7 +20,7 @@ interface Zone {
     assigned: ResourceType[];
 }
 
-const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, pendingBreeding }) => {
+const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDiscard, pendingBreeding }) => {
     const [zones, setZones] = useState<Zone[]>([]);
     const [availableAdults, setAvailableAdults] = useState({ sheep: 0, boar: 0, cow: 0 });
     const [availableNewborns, setAvailableNewborns] = useState({ sheep: 0, boar: 0, cow: 0 });
@@ -103,6 +104,23 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, pendi
         setAvailableNewborns(remNewborns);
     };
 
+    const getAssignments = () => {
+        const assignments: { [key: number]: ResourceType[] } = {};
+        zones.forEach(z => {
+            if (z.assigned.length === 0) return;
+            const animals = [...z.assigned];
+            let tileIndex = 0;
+            while (animals.length > 0) {
+                const ani = animals.shift()!;
+                const tIdx = z.tiles[tileIndex % z.tiles.length];
+                if (!assignments[tIdx]) assignments[tIdx] = [];
+                assignments[tIdx].push(ani);
+                tileIndex++;
+            }
+        });
+        return assignments;
+    };
+
     const handleAdd = (zoneIndex: number, type: ResourceType) => {
         // @ts-ignore
         const total = availableAdults[type] + availableNewborns[type];
@@ -130,24 +148,19 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, pendi
     };
 
     const handleSave = () => {
-        const assignments: { [key: number]: ResourceType[] } = {};
-        zones.forEach(z => {
-            if (z.assigned.length === 0) return;
-            const animals = [...z.assigned];
-            let tileIndex = 0;
-            while (animals.length > 0) {
-                const ani = animals.shift()!;
-                const tIdx = z.tiles[tileIndex % z.tiles.length];
-                if (!assignments[tIdx]) assignments[tIdx] = [];
-                assignments[tIdx].push(ani);
-                tileIndex++;
-            }
-        });
-        onSave(assignments);
+        onSave(getAssignments());
     };
 
     const handleAuto = () => {
         onSave({});
+    };
+
+    const handleCook = (type: 'sheep'|'boar'|'cow') => {
+        if(onCook) onCook(type, getAssignments());
+    };
+
+    const handleDiscard = (type: 'sheep'|'boar'|'cow', isNewborn: boolean) => {
+        if(onDiscard) onDiscard(type, isNewborn, getAssignments());
     };
 
     return (
@@ -164,16 +177,28 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, pendi
                                      return (
                                          <div key={type} className="flex items-center bg-slate-700 rounded overflow-hidden border border-slate-600">
                                              <span className="px-2 py-1 text-white">{type === 'sheep' ? '🐑' : type === 'boar' ? '🐗' : '🐮'} {availableAdults[type]}</span>
-                                             {onCook && (
-                                                <button 
-                                                    onClick={() => onCook(type)} 
-                                                    disabled={player.animals[type] <= 0}
-                                                    className="bg-orange-600 hover:bg-orange-500 text-white text-[10px] px-1.5 py-1.5 font-bold disabled:opacity-50"
-                                                    title="Cook 1 Adult"
-                                                >
-                                                    🔥
-                                                </button>
-                                             )}
+                                             <div className="flex border-l border-slate-500">
+                                                 {onCook && (
+                                                    <button 
+                                                        onClick={() => handleCook(type)} 
+                                                        disabled={player.animals[type] <= 0}
+                                                        className="bg-orange-600 hover:bg-orange-500 text-white text-[10px] px-1.5 py-1.5 font-bold disabled:opacity-50 border-r border-orange-500"
+                                                        title="Cook 1 Adult"
+                                                    >
+                                                        🔥
+                                                    </button>
+                                                 )}
+                                                 {onDiscard && (
+                                                     <button 
+                                                        onClick={() => handleDiscard(type, false)} 
+                                                        disabled={player.animals[type] <= 0}
+                                                        className="bg-red-700 hover:bg-red-600 text-white text-[10px] px-1.5 py-1.5 font-bold disabled:opacity-50"
+                                                        title="Discard 1 Adult"
+                                                     >
+                                                        🗑️
+                                                     </button>
+                                                 )}
+                                             </div>
                                          </div>
                                      );
                                  })}
@@ -183,9 +208,27 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, pendi
                             <div className="flex gap-4 items-center">
                                 <div className="text-sm text-yellow-400 font-bold">Newborns (No Cook):</div>
                                 <div className="flex gap-2">
-                                     <span className={`px-2 py-1 rounded bg-slate-900 border border-yellow-700 ${availableNewborns.sheep > 0 ? 'text-yellow-200' : 'text-gray-600'}`}>🐑 {availableNewborns.sheep}</span>
-                                     <span className={`px-2 py-1 rounded bg-slate-900 border border-yellow-700 ${availableNewborns.boar > 0 ? 'text-yellow-200' : 'text-gray-600'}`}>🐗 {availableNewborns.boar}</span>
-                                     <span className={`px-2 py-1 rounded bg-slate-900 border border-yellow-700 ${availableNewborns.cow > 0 ? 'text-yellow-200' : 'text-gray-600'}`}>🐮 {availableNewborns.cow}</span>
+                                     {['sheep','boar','cow'].map(t => {
+                                         const type = t as 'sheep'|'boar'|'cow';
+                                         const count = availableNewborns[type];
+                                         const has = count > 0;
+                                         return (
+                                             <div key={`new-${type}`} className={`flex items-center rounded border overflow-hidden ${has ? 'bg-slate-900 border-yellow-700' : 'bg-slate-800 border-gray-700 opacity-50'}`}>
+                                                  <span className={`px-2 py-1 ${has ? 'text-yellow-200' : 'text-gray-500'}`}>
+                                                      {type === 'sheep' ? '🐑' : type === 'boar' ? '🐗' : '🐮'} {count}
+                                                  </span>
+                                                  {onDiscard && has && (
+                                                     <button 
+                                                        onClick={() => handleDiscard(type, true)} 
+                                                        className="bg-red-900 hover:bg-red-800 text-white text-[10px] px-1.5 py-1.5 font-bold border-l border-red-700"
+                                                        title="Discard 1 Newborn"
+                                                     >
+                                                        🗑️
+                                                     </button>
+                                                  )}
+                                             </div>
+                                         );
+                                     })}
                                 </div>
                             </div>
                         )}
