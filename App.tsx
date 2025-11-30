@@ -11,6 +11,7 @@ import AnimalManager from './components/AnimalManager';
 import GameOverModal from './components/GameOverModal';
 import { calculateAllocation } from './utils/gameLogic';
 import { Player } from './types';
+import { toggleMute, isMuted } from './utils/sound';
 
 const App: React.FC = () => {
   const { 
@@ -53,6 +54,7 @@ const App: React.FC = () => {
   const [showMajorList, setShowMajorList] = useState(false);
   const [showScoring, setShowScoring] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
+  const [muted, setMuted] = useState(isMuted());
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -89,9 +91,14 @@ const App: React.FC = () => {
       return 6;
   };
 
+  const handleToggleMute = () => {
+      const newState = toggleMute();
+      setMuted(newState);
+  };
+
   // Helper to check conversion capability
   const canConvert = (res: 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed'|'wood'|'clay') => {
-      if (res === 'grain' || res === 'veg') return true; // Always allowed 1:1 raw
+      if (res === 'grain' || res === 'veg') return true; 
       if (['sheep', 'boar', 'cow'].includes(res)) {
           return activePlayer.majors.some(m => m.cook && m.cook[res as 'sheep'|'boar'|'cow']);
       }
@@ -119,7 +126,7 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-4">
-            {/* ACTION INTERACTION OVERLAY - MOVED TO HEADER RIGHT SIDE */}
+            {/* ACTION INTERACTION OVERLAY */}
             {activePlayer.tempMode && activePlayer.type === 'human' && (
                 <div className="animate-fadeIn">
                     <div className="bg-stone-800/95 border-2 border-yellow-600 px-5 py-1.5 shadow-2xl rounded-[30px] flex items-center gap-3 backdrop-blur-sm">
@@ -205,7 +212,7 @@ const App: React.FC = () => {
                             </div>
                         )}
 
-                        {/* Unified Sow/Bake UI - SEPARATE APPLIANCES */}
+                        {/* Unified Sow/Bake UI */}
                         {activePlayer.tempMode.mode === 'sow_bake_choice' && (
                             <div className="flex gap-4 items-center">
                                 {/* Sow Controls */}
@@ -320,6 +327,12 @@ const App: React.FC = () => {
             )}
 
             <div className="flex items-center gap-2">
+                <button 
+                    onClick={handleToggleMute} 
+                    className={`px-3 py-1 rounded text-xs border transition-colors w-20 text-center ${muted ? 'bg-red-900/50 border-red-800 text-red-300' : 'bg-green-900/50 border-green-800 text-green-300'}`}
+                >
+                    {muted ? '🔇 Muted' : '🔊 Sound'}
+                </button>
                 <button onClick={() => setShowScoring(true)} className="px-3 py-1 bg-stone-700 hover:bg-stone-600 rounded text-xs border border-stone-600 transition-colors">
                 📊 Scoring
                 </button>
@@ -340,7 +353,7 @@ const App: React.FC = () => {
         {/* LEFT COLUMN: ACTIONS BOARD (Wider) */}
         <div className="lg:col-span-5 space-y-4">
           
-          {/* Section 1: Basic Actions - UPDATED TO USE gameState.baseActions */}
+          {/* Section 1: Basic Actions */}
           <div className="bg-stone-800/50 p-3 rounded-xl border border-stone-700 shadow-inner">
             <h2 className="text-xs font-bold text-stone-400 uppercase tracking-wider mb-2 border-b border-stone-700 pb-1">
                 Base Actions

@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { Player, ResourceType } from '../types';
 import { analyzeFarmLayout } from '../utils/gameLogic';
+import { playSound } from '../utils/sound';
 
 interface Props {
     player: Player;
@@ -26,11 +27,9 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
     const [availableNewborns, setAvailableNewborns] = useState({ sheep: 0, boar: 0, cow: 0 });
 
     useEffect(() => {
-        // Initialize Zones based on farm layout
         const layout = analyzeFarmLayout(player);
         const newZones: Zone[] = [];
         
-        // Pastures
         layout.pastures.forEach((p, idx) => {
             newZones.push({
                 id: `pasture_${idx}`,
@@ -41,7 +40,6 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
             });
         });
 
-        // Singles (House/Stable)
         layout.singles.forEach(s => {
             newZones.push({
                 id: `${s.type}_${s.idx}`,
@@ -52,9 +50,7 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
             });
         });
 
-        // Initialize assignments from existing player state if present
         if (player.assignedAnimals && Object.keys(player.assignedAnimals).length > 0) {
-             // Rehydrate assignments
              newZones.forEach(z => {
                  z.tiles.forEach(tIdx => {
                      const animalsOnTile = player.assignedAnimals[tIdx];
@@ -65,7 +61,6 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
              });
         }
         
-        // Initial Calculation of Available animals
         recalcAvailable(newZones, player.animals, pendingBreeding || {sheep:0, boar:0, cow:0});
         setZones(newZones);
     }, [player, pendingBreeding]); 
@@ -80,8 +75,6 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
             });
         });
 
-        // Logic: Allocation takes from Adults first, then Newborns.
-        
         const remAdults = {
             sheep: Math.max(0, currentAdults.sheep - used.sheep),
             boar: Math.max(0, currentAdults.boar - used.boar),
@@ -129,13 +122,13 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
         const updatedZones = [...zones];
         const zone = updatedZones[zoneIndex];
 
-        if (zone.assigned.length >= zone.capacity) return; // Full
-        // STRICT RULE: Mixed animals not allowed (except empty)
-        if (zone.assigned.length > 0 && zone.assigned[0] !== type) return;
+        if (zone.assigned.length >= zone.capacity) { playSound('error'); return; }
+        if (zone.assigned.length > 0 && zone.assigned[0] !== type) { playSound('error'); return; }
 
         zone.assigned.push(type);
         setZones(updatedZones);
         recalcAvailable(updatedZones, player.animals, pendingBreeding || {sheep:0, boar:0, cow:0});
+        playSound(type as 'sheep'|'boar'|'cow');
     };
 
     const handleRemove = (zoneIndex: number, type: ResourceType) => {
@@ -146,6 +139,7 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
             zone.assigned.splice(idx, 1);
             setZones(updatedZones);
             recalcAvailable(updatedZones, player.animals, pendingBreeding || {sheep:0, boar:0, cow:0});
+            playSound('click');
         }
     };
 

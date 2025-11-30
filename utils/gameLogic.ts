@@ -14,8 +14,6 @@ export const analyzeFarmLayout = (p: Player): FarmLayout => {
     const houseTiles = p.farm.map((t, i) => t === 1 ? i : -1).filter(i => i !== -1);
     
     // House Capacity Rule: A house (regardless of rooms) can usually hold 1 pet.
-    // However, for the "a/b" display, we want to show capacity on the tiles.
-    // Let's say the pet lives in the first room.
     if (houseTiles.length > 0) {
          singles.push({ idx: houseTiles[0], type: 'house', capacity: 1 });
     }
@@ -74,11 +72,14 @@ export const calculateScore = (p: Player): number => {
     s += getTierScore('boar', p.animals.boar);
     s += getTierScore('cow', p.animals.cow);
 
+    // Unused spaces calculation
     let occupiedCount = 0;
     for (let i = 0; i < 15; i++) {
+        // Direct occupancy (House, Field, Stable)
         if (p.farm[i] !== 0) {
             occupiedCount++;
         } else {
+            // Check if it's part of a pasture (even if empty)
             for (const pasture of layout.pastures) {
                 if (pasture.tiles.includes(i)) {
                     occupiedCount++;
@@ -89,16 +90,47 @@ export const calculateScore = (p: Player): number => {
     }
     s -= (15 - occupiedCount);
 
-    s += p.stablesCount;
+    // Fenced Stables Score
+    // Rule: Score equals total number of stables contained in enclosures
+    let fencedStablesCount = 0;
+    for (let i = 0; i < 15; i++) {
+        if (p.farm[i] === 5) { // Stable
+            // Check if this stable is part of a valid pasture
+            const inPasture = layout.pastures.some(pas => pas.tiles.includes(i));
+            if (inPasture) fencedStablesCount++;
+        }
+    }
+    s += Math.min(4, fencedStablesCount);
+
     const rooms = p.farm.filter(t => t === 1).length;
     const houseVal = p.houseType === 'wood' ? 0 : (p.houseType === 'clay' ? 1 : 2);
     s += rooms * houseVal;
 
     s += p.res.maxWorkers * 3;
+    
+    // Major Scores
     p.majors.forEach(m => s += m.score);
+    
+    // Bonus Points for Workshops
     p.majors.filter(m => m.special === 'bonus').forEach(m => {
-        if (m.bonusType) s += Math.floor((p.res[m.bonusType] || 0) / 2);
+        if (m.id === 'm7') { // Joinery (Wood)
+            // 3/5/7 wood -> 1/2/3 points
+            if (p.res.wood >= 7) s += 3;
+            else if (p.res.wood >= 5) s += 2;
+            else if (p.res.wood >= 3) s += 1;
+        } else if (m.id === 'm8') { // Pottery (Clay)
+            // 3/5/7 clay -> 1/2/3 points
+            if (p.res.clay >= 7) s += 3;
+            else if (p.res.clay >= 5) s += 2;
+            else if (p.res.clay >= 3) s += 1;
+        } else if (m.id === 'm6') { // Basketmaker (Reed)
+            // 2/4/5 reed -> 1/2/3 points
+            if (p.res.reed >= 5) s += 3;
+            else if (p.res.reed >= 4) s += 2;
+            else if (p.res.reed >= 2) s += 1;
+        }
     });
+
     s += p.begging * (-3);
     return s;
 };

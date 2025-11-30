@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { SCORING_TIERS } from '../constants';
 
@@ -45,19 +46,50 @@ const ScoringTable: React.FC<Props> = ({ onClose }) => {
       <div className="bg-slate-800 border-2 border-yellow-600 rounded-lg shadow-2xl p-6 max-w-2xl w-full mx-4 animate-fadeIn" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-2xl font-bold text-yellow-400 flex items-center gap-2">
-            📊 Scoring Rules <span className="text-sm text-gray-400 font-normal">(Items needed for score)</span>
+            📊 Scoring Rules
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white text-xl p-1">✕</button>
         </div>
         
-        <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left text-gray-300">
+        <div className="overflow-x-auto max-h-[70vh] pr-2 scrollbar-thin scrollbar-thumb-stone-600">
+            <div className="mb-4">
+                <h3 className="text-yellow-200 font-bold mb-2 uppercase text-xs tracking-wider">General Points</h3>
+                <div className="grid grid-cols-2 gap-2 text-sm text-stone-300">
+                    <div className="flex justify-between bg-slate-900/50 p-2 rounded border border-slate-700">
+                        <span>🧱 Clay Rooms</span>
+                        <span className="font-bold text-white">1 VP / room</span>
+                    </div>
+                    <div className="flex justify-between bg-slate-900/50 p-2 rounded border border-slate-700">
+                        <span>🪨 Stone Rooms</span>
+                        <span className="font-bold text-white">2 VP / room</span>
+                    </div>
+                    <div className="flex justify-between bg-slate-900/50 p-2 rounded border border-slate-700">
+                        <span>🏚️ Fenced Stables</span>
+                        <span className="font-bold text-white">1 VP / stable</span>
+                    </div>
+                    <div className="flex justify-between bg-slate-900/50 p-2 rounded border border-slate-700">
+                        <span>👷 Family Members</span>
+                        <span className="font-bold text-white">3 VP / person</span>
+                    </div>
+                    <div className="flex justify-between bg-slate-900/50 p-2 rounded border border-slate-700">
+                        <span>🟥 Empty Farm Space</span>
+                        <span className="font-bold text-red-400">-1 VP / tile</span>
+                    </div>
+                    <div className="flex justify-between bg-slate-900/50 p-2 rounded border border-slate-700">
+                        <span>🆘 Begging Card</span>
+                        <span className="font-bold text-red-400">-3 VP / card</span>
+                    </div>
+                </div>
+            </div>
+
+            <h3 className="text-yellow-200 font-bold mb-2 uppercase text-xs tracking-wider">Resources & Animals</h3>
+            <table className="w-full text-sm text-left text-gray-300 mb-4">
                 <thead className="text-xs uppercase bg-slate-700 text-yellow-200">
                     <tr>
-                        <th className="px-4 py-3 rounded-tl-lg">Resource</th>
+                        <th className="px-4 py-3 rounded-tl-lg">Category</th>
                         {POINTS.map(p => (
-                            <th key={p} className="px-4 py-3 text-center bg-slate-700/50 border-l border-slate-600">
-                                <span className={`inline-block w-6 h-6 rounded-full ${p < 0 ? 'bg-red-900/80 text-red-200' : 'bg-green-900/80 text-green-200'} flex items-center justify-center mx-auto shadow-sm`}>
+                            <th key={p} className="px-2 py-3 text-center bg-slate-700/50 border-l border-slate-600">
+                                <span className={`inline-block w-6 h-6 rounded-full ${p < 0 ? 'bg-red-900/80 text-red-200' : 'bg-green-900/80 text-green-200'} flex items-center justify-center mx-auto shadow-sm text-xs`}>
                                     {p}
                                 </span>
                             </th>
@@ -65,16 +97,16 @@ const ScoringTable: React.FC<Props> = ({ onClose }) => {
                     </tr>
                 </thead>
                 <tbody>
-                    {Object.keys(SCORING_TIERS).map((cat, idx) => (
+                    {Object.keys(SCORING_TIERS).map((cat) => (
                         <tr key={cat} className="border-b border-slate-700 hover:bg-slate-700/50 transition-colors">
-                            <td className="px-4 py-3 font-medium text-white flex items-center gap-3">
-                                <span className="text-xl filter drop-shadow-md">{CATEGORY_MAP[cat].icon}</span>
+                            <td className="px-4 py-2 font-medium text-white flex items-center gap-3">
+                                <span className="text-lg filter drop-shadow-md">{CATEGORY_MAP[cat].icon}</span>
                                 {CATEGORY_MAP[cat].label}
                             </td>
                             {POINTS.map(p => {
                                 const range = getRange(cat, p);
                                 return (
-                                    <td key={p} className="px-4 py-3 text-center border-l border-slate-700/50">
+                                    <td key={p} className="px-2 py-2 text-center border-l border-slate-700/50">
                                         <span className={`${range === '-' ? 'text-gray-600' : 'text-white font-mono'}`}>
                                             {range}
                                         </span>
@@ -85,10 +117,13 @@ const ScoringTable: React.FC<Props> = ({ onClose }) => {
                     ))}
                 </tbody>
             </table>
-        </div>
-        
-        <div className="mt-4 text-xs text-gray-400 text-center italic bg-slate-900/50 p-2 rounded">
-            * Numbers indicate the quantity of items/tiles required. e.g., "0-1" means 0 or 1 item. "8+" means 8 or more.
+
+            <h3 className="text-yellow-200 font-bold mb-2 uppercase text-xs tracking-wider">Bonus Points (Workshops)</h3>
+            <div className="text-xs text-gray-300 space-y-1 bg-slate-900/30 p-2 rounded border border-slate-700">
+                <p><strong>🪑 Joinery (Wood):</strong> 3/5/7 wood → 1/2/3 VP</p>
+                <p><strong>🧱 Pottery (Clay):</strong> 3/5/7 clay → 1/2/3 VP</p>
+                <p><strong>🧺 Basketmaker (Reed):</strong> 2/4/5 reed → 1/2/3 VP</p>
+            </div>
         </div>
         
         <div className="mt-4 flex justify-end">
