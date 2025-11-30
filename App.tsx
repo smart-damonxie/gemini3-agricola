@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -24,6 +23,7 @@ const App: React.FC = () => {
     confirmModeAction,
     switchTool,
     toggleSeed,
+    setSubAction,
     selectMajor,
     renovate,
     viewingCard,
@@ -42,6 +42,7 @@ const App: React.FC = () => {
     adjustBake,
     discardAnimal,
     cookOverflow,
+    cookFromManager,
     confirmOverflowEndTurn,
     debug
   } = useGameLogic();
@@ -125,6 +126,7 @@ const App: React.FC = () => {
                         <span className="text-sm font-bold text-white whitespace-nowrap">
                             {activePlayer.tempMode.mode === 'sow_bake_choice' ? 'Sow/Bake' : 
                             activePlayer.tempMode.mode === 'bake_immediate' ? 'Bake' :
+                            activePlayer.tempMode.mode === 'plow_sow' ? 'Plow + Sow' :
                             activePlayer.tempMode.mode === 'simple' ? 'Confirm?' :
                             actionDetails?.name || activePlayer.tempMode.mode}
                         </span>
@@ -148,7 +150,42 @@ const App: React.FC = () => {
                             </div>
                         )}
 
-                        {(activePlayer.tempMode.mode === 'sow' || activePlayer.tempMode.mode === 'plow_sow') && (
+                        {activePlayer.tempMode.mode === 'plow_sow' && (
+                            <div className="flex items-center gap-2">
+                                <div className="flex bg-stone-900 rounded-full p-0.5 gap-1">
+                                    <button 
+                                        onClick={() => setSubAction('plow')}
+                                        className={`px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${activePlayer.tempMode.subAction === 'plow' ? 'bg-green-700 text-white ring-1 ring-white' : 'text-stone-400 hover:text-white'}`}
+                                    >
+                                        🚜 Plow
+                                    </button>
+                                    <button 
+                                        onClick={() => setSubAction('sow')}
+                                        className={`px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${activePlayer.tempMode.subAction === 'sow' ? 'bg-yellow-700 text-white ring-1 ring-white' : 'text-stone-400 hover:text-white'}`}
+                                    >
+                                        🌱 Sow
+                                    </button>
+                                </div>
+                                {activePlayer.tempMode.subAction === 'sow' && (
+                                    <div className="flex bg-stone-900 rounded-full p-0.5 gap-1">
+                                        <button 
+                                            onClick={() => toggleSeed('grain')}
+                                            className={`px-2 py-1 rounded-full text-[10px] font-bold ${activePlayer.tempMode.currentSeed === 'grain' ? 'bg-yellow-600 text-white' : 'text-stone-400'}`}
+                                        >
+                                            🌾
+                                        </button>
+                                        <button 
+                                            onClick={() => toggleSeed('veg')}
+                                            className={`px-2 py-1 rounded-full text-[10px] font-bold ${activePlayer.tempMode.currentSeed === 'veg' ? 'bg-orange-600 text-white' : 'text-stone-400'}`}
+                                        >
+                                            🥕
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {activePlayer.tempMode.mode === 'sow' && (
                             <div className="flex bg-stone-900 rounded-full p-0.5 gap-1">
                                 <button 
                                     onClick={() => toggleSeed('grain')}
@@ -366,6 +403,8 @@ const App: React.FC = () => {
               player={humanPlayer} 
               onClose={toggleAnimalManager} 
               onSave={saveAnimalAssignment} 
+              onCook={cookFromManager}
+              pendingBreeding={humanPlayer.pendingBreeding || undefined}
           />
       )}
 

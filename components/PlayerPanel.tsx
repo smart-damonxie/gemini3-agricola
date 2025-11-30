@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { Player, Allocation, MajorCard, ResourceType } from '../types';
 import FarmTile from './FarmTile';

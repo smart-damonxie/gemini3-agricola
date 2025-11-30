@@ -7,6 +7,8 @@ interface Props {
     player: Player;
     onClose: () => void;
     onSave: (assignments: { [key: number]: ResourceType[] }) => void;
+    onCook?: (type: 'sheep'|'boar'|'cow') => void;
+    pendingBreeding?: { sheep: number, boar: number, cow: number };
 }
 
 interface Zone {
@@ -17,9 +19,10 @@ interface Zone {
     assigned: ResourceType[];
 }
 
-const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
+const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, pendingBreeding }) => {
     const [zones, setZones] = useState<Zone[]>([]);
-    const [available, setAvailable] = useState({ sheep: 0, boar: 0, cow: 0 });
+    const [availableAdults, setAvailableAdults] = useState({ sheep: 0, boar: 0, cow: 0 });
+    const [availableNewborns, setAvailableNewborns] = useState({ sheep: 0, boar: 0, cow: 0 });
 
     useEffect(() => {
         // Initialize Zones based on farm layout
@@ -51,7 +54,6 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
         // Initialize assignments from existing player state if present
         if (player.assignedAnimals && Object.keys(player.assignedAnimals).length > 0) {
              // Rehydrate assignments
-             // We need to map back from tileIdx to Zone
              newZones.forEach(z => {
                  z.tiles.forEach(tIdx => {
                      const animalsOnTile = player.assignedAnimals[tIdx];
@@ -61,12 +63,13 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
                  });
              });
         }
-        // Calculate remaining based on total owned vs assigned
-        recalcAvailable(newZones);
+        
+        // Initial Calculation of Available animals
+        recalcAvailable(newZones, player.animals, pendingBreeding || {sheep:0, boar:0, cow:0});
         setZones(newZones);
-    }, [player]);
+    }, [player, pendingBreeding]); 
 
-    const recalcAvailable = (currentZones: Zone[]) => {
+    const recalcAvailable = (currentZones: Zone[], currentAdults: any, currentNewborns: any) => {
         const used = { sheep: 0, boar: 0, cow: 0 };
         currentZones.forEach(z => {
             z.assigned.forEach(a => {
@@ -75,44 +78,44 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
                 if (a === 'cow') used.cow++;
             });
         });
-        setAvailable({
-            sheep: Math.max(0, player.animals.sheep - used.sheep),
-            boar: Math.max(0, player.animals.boar - used.boar),
-            cow: Math.max(0, player.animals.cow - used.cow),
-        });
+
+        // Logic: Allocation takes from Adults first, then Newborns.
+        
+        const remAdults = {
+            sheep: Math.max(0, currentAdults.sheep - used.sheep),
+            boar: Math.max(0, currentAdults.boar - used.boar),
+            cow: Math.max(0, currentAdults.cow - used.cow),
+        };
+
+        const usedFromNewborns = {
+            sheep: Math.max(0, used.sheep - currentAdults.sheep),
+            boar: Math.max(0, used.boar - currentAdults.boar),
+            cow: Math.max(0, used.cow - currentAdults.cow),
+        };
+
+        const remNewborns = {
+            sheep: Math.max(0, currentNewborns.sheep - usedFromNewborns.sheep),
+            boar: Math.max(0, currentNewborns.boar - usedFromNewborns.boar),
+            cow: Math.max(0, currentNewborns.cow - usedFromNewborns.cow),
+        };
+
+        setAvailableAdults(remAdults);
+        setAvailableNewborns(remNewborns);
     };
 
     const handleAdd = (zoneIndex: number, type: ResourceType) => {
         // @ts-ignore
-        if (available[type] <= 0) return; // No more animals of this type
+        const total = availableAdults[type] + availableNewborns[type];
+        if (total <= 0) return;
 
         const updatedZones = [...zones];
         const zone = updatedZones[zoneIndex];
 
         if (zone.assigned.length >= zone.capacity) return; // Full
-
-        // Rule Check: Pastures usually 1 type.
-        // Prompt asks for flexibility, but let's warn or restrict slightly if mixing types in same pasture?
-        // Actually, let's allow flexibility as requested, but standard logic warns.
-        // "1 sheep in room, 3 pigs in pen" implies single type per location usually.
-        // Let's strictly enforce single type per Zone for simplicity unless it's a House which might be weird.
-        // Actually house can hold 1 pet.
         
-        const currentTypes = Array.from(new Set(zone.assigned));
-        if (currentTypes.length > 0 && !currentTypes.includes(type)) {
-            // Trying to mix types
-            if (zone.type === 'pasture' || zone.type === 'stable') {
-                // Usually not allowed. Let's block it for now to avoid confusion.
-                // Or maybe allow if user really wants? "Flexible".
-                // I will block it because visualized icons overlap weirdly if mixed.
-                // alert("Cannot mix animal types in one enclosure!");
-                // return;
-            }
-        }
-
         zone.assigned.push(type);
         setZones(updatedZones);
-        recalcAvailable(updatedZones);
+        recalcAvailable(updatedZones, player.animals, pendingBreeding || {sheep:0, boar:0, cow:0});
     };
 
     const handleRemove = (zoneIndex: number, type: ResourceType) => {
@@ -122,18 +125,14 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
         if (idx > -1) {
             zone.assigned.splice(idx, 1);
             setZones(updatedZones);
-            recalcAvailable(updatedZones);
+            recalcAvailable(updatedZones, player.animals, pendingBreeding || {sheep:0, boar:0, cow:0});
         }
     };
 
     const handleSave = () => {
         const assignments: { [key: number]: ResourceType[] } = {};
-        
         zones.forEach(z => {
             if (z.assigned.length === 0) return;
-            
-            // Distribute animals from Zone to Tiles
-            // e.g. Zone has 3 sheep, tiles [0, 1]. Tile 0 gets 2, Tile 1 gets 1.
             const animals = [...z.assigned];
             let tileIndex = 0;
             while (animals.length > 0) {
@@ -144,26 +143,52 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
                 tileIndex++;
             }
         });
-        
         onSave(assignments);
     };
 
     const handleAuto = () => {
-        onSave({}); // Clearing assignments triggers auto-calc in main logic
+        onSave({});
     };
 
     return (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/80 backdrop-blur-sm">
             <div className="bg-slate-800 border-2 border-indigo-500 rounded-lg shadow-2xl p-6 max-w-4xl w-full flex flex-col max-h-[90vh]">
                 <div className="flex justify-between items-center mb-4 pb-2 border-b border-indigo-500/50">
-                    <h2 className="text-2xl font-bold text-indigo-300">Strategy: Animal Placement</h2>
-                    <div className="flex gap-4 items-center">
-                        <div className="text-sm text-gray-400">Unassigned:</div>
-                        <div className="flex gap-2">
-                             <span className={`px-2 py-1 rounded bg-slate-700 ${available.sheep > 0 ? 'text-white font-bold' : 'text-gray-500'}`}>🐑 {available.sheep}</span>
-                             <span className={`px-2 py-1 rounded bg-slate-700 ${available.boar > 0 ? 'text-white font-bold' : 'text-gray-500'}`}>🐗 {available.boar}</span>
-                             <span className={`px-2 py-1 rounded bg-slate-700 ${available.cow > 0 ? 'text-white font-bold' : 'text-gray-500'}`}>🐮 {available.cow}</span>
+                    <h2 className="text-2xl font-bold text-indigo-300">Animal Adjustment</h2>
+                    <div className="flex flex-col items-end">
+                        <div className="flex gap-4 items-center mb-1">
+                            <div className="text-sm text-gray-400 font-bold">Adults (Cookable):</div>
+                            <div className="flex gap-2">
+                                 {['sheep','boar','cow'].map(t => {
+                                     const type = t as 'sheep'|'boar'|'cow';
+                                     return (
+                                         <div key={type} className="flex items-center bg-slate-700 rounded overflow-hidden border border-slate-600">
+                                             <span className="px-2 py-1 text-white">{type === 'sheep' ? '🐑' : type === 'boar' ? '🐗' : '🐮'} {availableAdults[type]}</span>
+                                             {onCook && (
+                                                <button 
+                                                    onClick={() => onCook(type)} 
+                                                    disabled={player.animals[type] <= 0}
+                                                    className="bg-orange-600 hover:bg-orange-500 text-white text-[10px] px-1.5 py-1.5 font-bold disabled:opacity-50"
+                                                    title="Cook 1 Adult"
+                                                >
+                                                    🔥
+                                                </button>
+                                             )}
+                                         </div>
+                                     );
+                                 })}
+                            </div>
                         </div>
+                        {pendingBreeding && (
+                            <div className="flex gap-4 items-center">
+                                <div className="text-sm text-yellow-400 font-bold">Newborns (No Cook):</div>
+                                <div className="flex gap-2">
+                                     <span className={`px-2 py-1 rounded bg-slate-900 border border-yellow-700 ${availableNewborns.sheep > 0 ? 'text-yellow-200' : 'text-gray-600'}`}>🐑 {availableNewborns.sheep}</span>
+                                     <span className={`px-2 py-1 rounded bg-slate-900 border border-yellow-700 ${availableNewborns.boar > 0 ? 'text-yellow-200' : 'text-gray-600'}`}>🐗 {availableNewborns.boar}</span>
+                                     <span className={`px-2 py-1 rounded bg-slate-900 border border-yellow-700 ${availableNewborns.cow > 0 ? 'text-yellow-200' : 'text-gray-600'}`}>🐮 {availableNewborns.cow}</span>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -175,7 +200,6 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
                                 <span className="text-[10px] text-gray-500">Tiles: {zone.tiles.join(',')}</span>
                             </div>
                             
-                            {/* Current Contents */}
                             <div className="bg-black/40 h-16 rounded flex items-center justify-center flex-wrap gap-1 p-1 overflow-hidden relative">
                                 {zone.assigned.length === 0 && <span className="text-gray-600 text-xs italic">Empty</span>}
                                 {zone.assigned.map((a, i) => (
@@ -186,11 +210,10 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave }) => {
                                 <div className="absolute top-0 right-0 text-[9px] bg-black/60 px-1 rounded text-white">{zone.assigned.length}/{zone.capacity}</div>
                             </div>
 
-                            {/* Controls */}
                             <div className="flex justify-center gap-1 mt-auto">
-                                <button disabled={available.sheep <= 0 || zone.assigned.length >= zone.capacity} onClick={() => handleAdd(idx, 'sheep')} className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed">🐑</button>
-                                <button disabled={available.boar <= 0 || zone.assigned.length >= zone.capacity} onClick={() => handleAdd(idx, 'boar')} className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed">🐗</button>
-                                <button disabled={available.cow <= 0 || zone.assigned.length >= zone.capacity} onClick={() => handleAdd(idx, 'cow')} className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed">🐮</button>
+                                <button disabled={(availableAdults.sheep + availableNewborns.sheep) <= 0 || zone.assigned.length >= zone.capacity} onClick={() => handleAdd(idx, 'sheep')} className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed">🐑</button>
+                                <button disabled={(availableAdults.boar + availableNewborns.boar) <= 0 || zone.assigned.length >= zone.capacity} onClick={() => handleAdd(idx, 'boar')} className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed">🐗</button>
+                                <button disabled={(availableAdults.cow + availableNewborns.cow) <= 0 || zone.assigned.length >= zone.capacity} onClick={() => handleAdd(idx, 'cow')} className="px-2 py-1 bg-slate-700 hover:bg-slate-600 rounded text-sm disabled:opacity-30 disabled:cursor-not-allowed">🐮</button>
                             </div>
                         </div>
                     ))}

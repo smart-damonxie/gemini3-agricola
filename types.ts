@@ -1,5 +1,4 @@
 
-
 export type ResourceType = 'wood' | 'clay' | 'reed' | 'stone' | 'food' | 'grain' | 'veg' | 'sheep' | 'boar' | 'cow';
 
 export interface Cost {
@@ -72,6 +71,11 @@ export interface Player {
     boar: number;
     cow: number;
   };
+  newborns: { // Tracks newly bred animals that cannot be cooked this round
+    sheep: number;
+    boar: number;
+    cow: number;
+  };
   farm: number[]; // 0:Empty, 1:Room, 2:Field, 5:Stable
   farmCounts: number[];
   farmContent: (ResourceType | null)[];
@@ -98,7 +102,7 @@ export interface TempMode {
   pending?: { [key: number]: 'room' | 'stable' };
   currentTool?: 'room' | 'stable';
   selectedMajorId?: string;
-  subAction?: 'sow' | 'bake' | 'both'; // For Sow/Bake choice
+  subAction?: 'sow' | 'bake' | 'both' | 'plow'; // For Sow/Bake choice or Plow/Sow choice
   bakeTemp?: { grain: number }; // For tracking baking
 }
 

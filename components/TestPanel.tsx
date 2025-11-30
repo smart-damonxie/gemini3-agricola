@@ -31,6 +31,7 @@ const TEST_PLAYER_TEMPLATE: Player = {
     type: 'human',
     res: { wood: 0, clay: 0, reed: 0, stone: 0, food: 0, grain: 0, veg: 0, workers: 2, maxWorkers: 2 },
     animals: { sheep: 0, boar: 0, cow: 0 },
+    newborns: { sheep: 0, boar: 0, cow: 0 },
     farm: Array(15).fill(0).map((_, idx) => (idx === 5 || idx === 10) ? 1 : 0),
     farmCounts: Array(15).fill(0),
     farmContent: Array(15).fill(null),
