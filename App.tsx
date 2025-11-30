@@ -8,6 +8,7 @@ import ScoringTable from './components/ScoringTable';
 import RoundTracker from './components/RoundTracker';
 import TestPanel from './components/TestPanel';
 import AnimalManager from './components/AnimalManager';
+import GameOverModal from './components/GameOverModal';
 import { calculateAllocation } from './utils/gameLogic';
 import { Player } from './types';
 
@@ -400,6 +401,7 @@ const App: React.FC = () => {
       {/* OVERLAYS & MODALS */}
       {showScoring && <ScoringTable onClose={() => setShowScoring(false)} />}
       <TestPanel isOpen={isTestMode} onClose={() => setIsTestMode(false)} gameState={gameState} players={players} debug={debug} />
+      {gameState.gameOver && <GameOverModal players={players} onRestart={startGame} />}
 
       {isAdjustingAnimals && humanPlayer && (
           <AnimalManager 

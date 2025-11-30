@@ -238,11 +238,6 @@ export const useGameLogic = () => {
         clearGameTimer();
         addLog(`=== End of Round ${gs.round} ===`, '#fff');
         
-        if (gs.round >= MAX_ROUNDS) {
-            updateGameState(prev => ({ ...prev, gameOver: true }));
-            return;
-        }
-
         const currentPs = stateRef.current.players;
         const newPlayers = currentPs.map(p => {
             return {
@@ -278,13 +273,23 @@ export const useGameLogic = () => {
         if (HARVEST_ROUNDS.includes(gs.round)) {
             performHarvest();
         } else {
-            advanceRound();
+            if (gs.round >= MAX_ROUNDS) {
+                // Should not happen as 14 is a harvest round, but safe guard
+                updateGameState(prev => ({ ...prev, gameOver: true }));
+            } else {
+                advanceRound();
+            }
         }
     };
 
     const advanceRound = () => {
         const { gameState: gs } = stateRef.current;
-        if (gs.round >= MAX_ROUNDS) return;
+        
+        if (gs.round >= MAX_ROUNDS) {
+            updateGameState(prev => ({ ...prev, gameOver: true }));
+            addLog("🏁 Game Over!", "yellow");
+            return;
+        }
 
         const newDeck = [...gs.deck];
         const newRoundCards = [...gs.roundCards];
