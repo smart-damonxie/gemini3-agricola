@@ -92,6 +92,7 @@ export interface Player {
   overflowTemp?: any;
   pendingBreeding: { sheep: number, boar: number, cow: number } | null;
   assignedAnimals: { [key: number]: ResourceType[] };
+  workshopsUsed: { reed: boolean; wood: boolean; clay: boolean }; // Track usage in feed phase
 }
 
 export interface TempMode {

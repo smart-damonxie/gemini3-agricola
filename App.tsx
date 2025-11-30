@@ -220,7 +220,6 @@ const App: React.FC = () => {
                                     </button>
                                     <button 
                                         onClick={() => setSubAction('sow')}
-                                        disabled={!activePlayer.tempMode.existingVertices} 
                                         className={`px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${activePlayer.tempMode.subAction === 'sow' ? 'bg-yellow-700 text-white ring-1 ring-white' : 'text-stone-400 hover:text-white'}`}
                                     >
                                         🌱 Sow
@@ -600,23 +599,31 @@ const App: React.FC = () => {
                      {['reed','wood','clay'].map(res => {
                          const allowed = canConvert(res as any);
                          const count = activePlayer.res[res as any];
+                         const used = (activePlayer.workshopsUsed as any)[res]; // Check usage
+                         
                          if (!allowed && count === 0) return null;
                          if (!allowed) return null; // Only show if allowed (Feed phase)
 
                          const currentVal = (activePlayer.conversionTemp as any)[res];
-                         const limitReached = currentVal >= 1;
+                         const limitReached = currentVal >= 1 || used;
 
                          return (
-                             <div key={res} className={`grid grid-cols-[1fr_80px_1fr] items-center bg-stone-900 p-2 rounded ${limitReached ? 'opacity-75' : ''}`}>
+                             <div key={res} className={`grid grid-cols-[1fr_80px_1fr] items-center bg-stone-900 p-2 rounded ${limitReached ? 'opacity-60' : ''}`}>
                                  <div className="flex flex-col">
                                      <span className="capitalize text-stone-300 font-bold">{res}</span>
                                      <span className="text-[9px] text-blue-400">Workshop (Max 1)</span>
                                  </div>
                                  <div className="text-center font-mono text-white">{count}</div>
                                  <div className="flex items-center justify-end gap-2">
-                                     <button onClick={() => adjustConversion(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 text-white font-bold">-</button>
-                                     <span className="w-4 text-center text-yellow-400 font-bold">{currentVal}</span>
-                                     <button disabled={limitReached} onClick={() => adjustConversion(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold">+</button>
+                                     {used ? (
+                                        <span className="text-xs font-bold text-red-400 bg-red-900/50 px-2 py-0.5 rounded">Used</span>
+                                     ) : (
+                                         <>
+                                             <button onClick={() => adjustConversion(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 text-white font-bold">-</button>
+                                             <span className="w-4 text-center text-yellow-400 font-bold">{currentVal}</span>
+                                             <button disabled={limitReached} onClick={() => adjustConversion(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold">+</button>
+                                         </>
+                                     )}
                                  </div>
                              </div>
                          );

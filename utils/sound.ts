@@ -1,15 +1,26 @@
 
-let audioCtx: AudioContext | null = null;
 let muted = false;
 
-const initAudio = () => {
-  if (!audioCtx && typeof window !== 'undefined') {
-    // @ts-ignore
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (audioCtx && audioCtx.state === 'suspended') {
-    audioCtx.resume();
-  }
+const SOUND_URLS: { [key: string]: string } = {
+    'plow': 'https://actions.google.com/sounds/v1/tools/shovel_dig.ogg',
+    'plant': 'https://upload.wikimedia.org/wikipedia/commons/a/a2/Beans_pouring.ogg',
+    'build': 'https://actions.google.com/sounds/v1/tools/hammering_on_metal.ogg',
+    'wood': 'https://actions.google.com/sounds/v1/tools/wood_chop.ogg',
+    'clay': 'https://actions.google.com/sounds/v1/foley/mud_splat.ogg',
+    'stone': 'https://actions.google.com/sounds/v1/impacts/crash_heavy.ogg',
+    'reed': 'https://actions.google.com/sounds/v1/foley/leaves_rustle.ogg',
+    'food': 'https://actions.google.com/sounds/v1/eating/apple_bite.ogg',
+    'fence': 'https://actions.google.com/sounds/v1/tools/wooden_mallet_hit.ogg',
+    'harvest': 'https://actions.google.com/sounds/v1/cartoon/harp_strum.ogg',
+    'pop': 'https://actions.google.com/sounds/v1/cartoon/pop.ogg',
+    'sheep': 'https://actions.google.com/sounds/v1/animals/sheep_baa.ogg',
+    'boar': 'https://actions.google.com/sounds/v1/animals/pig_oink.ogg',
+    'cow': 'https://upload.wikimedia.org/wikipedia/commons/b/b3/Cow_mooing.ogg',
+    'cook': 'https://actions.google.com/sounds/v1/water/frying_pan_sizzle.ogg',
+    'click': 'https://actions.google.com/sounds/v1/cartoon/pop.ogg',
+    'error': 'https://actions.google.com/sounds/v1/cartoon/clank_car_crash.ogg',
+    'fanfare': 'https://actions.google.com/sounds/v1/cartoon/success_trumpet.ogg',
+    'gain': 'https://actions.google.com/sounds/v1/cartoon/pop.ogg'
 };
 
 export const toggleMute = () => {
@@ -19,160 +30,19 @@ export const toggleMute = () => {
 
 export const isMuted = () => muted;
 
-const createOscillator = (type: OscillatorType, freq: number, duration: number, startTime: number, vol: number = 0.1) => {
-    if (!audioCtx) return;
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+export const playSound = (type: string) => {
+    if (muted) return;
     
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, startTime);
+    // Check if mapping exists, fallback to pop if not found
+    const url = SOUND_URLS[type] || SOUND_URLS['pop'];
     
-    gain.gain.setValueAtTime(vol, startTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+    // Using simple HTML5 Audio
+    const audio = new Audio(url);
+    audio.volume = 0.5; // Reasonable default volume
     
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    
-    osc.start(startTime);
-    osc.stop(startTime + duration);
-};
-
-const createNoise = (duration: number, vol: number = 0.1) => {
-    if (!audioCtx) return;
-    const bufferSize = audioCtx.sampleRate * duration;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const data = buffer.getChannelData(0);
-    
-    for (let i = 0; i < bufferSize; i++) {
-        data[i] = Math.random() * 2 - 1;
-    }
-    
-    const noise = audioCtx.createBufferSource();
-    noise.buffer = buffer;
-    
-    const filter = audioCtx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.value = 1000;
-    
-    const gain = audioCtx.createGain();
-    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
-    gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + duration);
-    
-    noise.connect(filter);
-    filter.connect(gain);
-    gain.connect(audioCtx.destination);
-    noise.start();
-};
-
-export const playSound = (type: 'plow' | 'plant' | 'build' | 'wood' | 'harvest' | 'pop' | 'sheep' | 'boar' | 'cow' | 'cook' | 'error' | 'click' | 'fanfare' | 'gain') => {
-  if (muted) return;
-  initAudio();
-  if (!audioCtx) return;
-
-  const t = audioCtx.currentTime;
-
-  switch (type) {
-    case 'pop':
-        createOscillator('sine', 800, 0.1, t, 0.05);
-        break;
-    case 'click':
-        createOscillator('triangle', 1200, 0.05, t, 0.02);
-        break;
-    case 'error':
-        createOscillator('sawtooth', 150, 0.3, t, 0.1);
-        break;
-    case 'plow':
-        createNoise(0.4, 0.2); // Earthy crunch
-        createOscillator('square', 100, 0.1, t, 0.05);
-        break;
-    case 'wood':
-        createOscillator('square', 300, 0.05, t, 0.1); // Short wood click
-        break;
-    case 'build':
-        // Hammer sound: metal impact + noise
-        createOscillator('square', 200, 0.1, t, 0.2);
-        createNoise(0.1, 0.1);
-        setTimeout(() => {
-             if(!muted && audioCtx) {
-                createOscillator('square', 200, 0.1, audioCtx.currentTime, 0.15);
-                createNoise(0.1, 0.1);
-             }
-        }, 250);
-        break;
-    case 'plant':
-        // Rustle
-        createNoise(0.1, 0.05);
-        createOscillator('sine', 1200, 0.1, t, 0.01);
-        break;
-    case 'harvest':
-        // Chime
-        createOscillator('sine', 523.25, 0.5, t, 0.1);
-        createOscillator('sine', 659.25, 0.5, t + 0.1, 0.1);
-        createOscillator('sine', 783.99, 0.8, t + 0.2, 0.1);
-        break;
-    case 'fanfare':
-        // Major chord
-        createOscillator('triangle', 440, 0.4, t, 0.1);
-        createOscillator('triangle', 554, 0.4, t, 0.1);
-        createOscillator('triangle', 659, 0.4, t, 0.1);
-        break;
-    case 'cook':
-        // Sizzle
-        createNoise(0.5, 0.1);
-        break;
-    case 'gain':
-        // Coin-like
-        createOscillator('sine', 1000, 0.1, t, 0.05);
-        createOscillator('sine', 1500, 0.2, t + 0.05, 0.05);
-        break;
-    // Animals
-    case 'sheep': // Baa - vibrato triangle
-        const oscS = audioCtx.createOscillator();
-        oscS.type = 'triangle';
-        oscS.frequency.setValueAtTime(200, t);
-        const gainS = audioCtx.createGain();
-        gainS.gain.setValueAtTime(0.1, t);
-        gainS.gain.linearRampToValueAtTime(0, t + 0.4);
-        
-        // Tremolo
-        const lfo = audioCtx.createOscillator();
-        lfo.frequency.value = 10;
-        const lfoGain = audioCtx.createGain();
-        lfoGain.gain.value = 500;
-        lfo.connect(lfoGain);
-        lfoGain.connect(gainS.gain);
-        
-        oscS.connect(gainS);
-        gainS.connect(audioCtx.destination);
-        oscS.start(t);
-        oscS.stop(t + 0.4);
-        lfo.start(t);
-        lfo.stop(t + 0.4);
-        break;
-    case 'cow': // Moo - low sawtooth
-        createOscillator('sawtooth', 100, 0.8, t, 0.15);
-        // Filter movement for 'wow' sound
-        const oscC = audioCtx.createOscillator();
-        oscC.type = 'sawtooth';
-        oscC.frequency.value = 80;
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.Q.value = 5;
-        filter.frequency.setValueAtTime(200, t);
-        filter.frequency.linearRampToValueAtTime(600, t + 0.3);
-        filter.frequency.linearRampToValueAtTime(200, t + 0.8);
-        const gainC = audioCtx.createGain();
-        gainC.gain.setValueAtTime(0.1, t);
-        gainC.gain.linearRampToValueAtTime(0, t + 0.8);
-        oscC.connect(filter);
-        filter.connect(gainC);
-        gainC.connect(audioCtx.destination);
-        oscC.start(t);
-        oscC.stop(t + 0.8);
-        break;
-    case 'boar': // Grunt - short low square
-        createOscillator('sawtooth', 60, 0.15, t, 0.2);
-        createOscillator('sawtooth', 50, 0.15, t+0.2, 0.2);
-        break;
-  }
+    // Fire and forget, handle errors silently
+    audio.play().catch(e => {
+        // Often fails due to lack of user interaction first, or network issues
+        // console.warn("Sound play failed:", e); 
+    });
 };

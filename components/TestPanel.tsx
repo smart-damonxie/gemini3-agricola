@@ -43,7 +43,8 @@ const TEST_PLAYER_TEMPLATE: Player = {
     tempMode: null,
     harvestTemp: null,
     pendingBreeding: null,
-    assignedAnimals: {}
+    assignedAnimals: {},
+    workshopsUsed: { reed: false, wood: false, clay: false }
 };
 
 const TestPanel: React.FC<Props> = ({ isOpen, onClose }) => {

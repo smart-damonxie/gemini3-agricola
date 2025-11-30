@@ -25,7 +25,8 @@ const createInitialPlayers = (): Player[] => Array.from({ length: 4 }, (_, i) =>
     tempMode: null,
     harvestTemp: null,
     pendingBreeding: null,
-    assignedAnimals: {} 
+    assignedAnimals: {},
+    workshopsUsed: { reed: false, wood: false, clay: false }
 }));
 
 export const useGameLogic = () => {
@@ -310,7 +311,8 @@ export const useGameLogic = () => {
         // --- Newborns Mature ---
         const newPs = stateRef.current.players.map(p => ({
             ...p,
-            newborns: { sheep: 0, boar: 0, cow: 0 } 
+            newborns: { sheep: 0, boar: 0, cow: 0 },
+            workshopsUsed: { reed: false, wood: false, clay: false }
         }));
         stateRef.current.players = newPs;
         setPlayers(newPs);
@@ -322,7 +324,7 @@ export const useGameLogic = () => {
                 updatePlayer(pId, p => ({...p, res: {...p.res, food: p.res.food + 1}}));
                 const pName = stateRef.current.players[pId].name;
                 addLog(`${pName} got 1 food from Well`, '#29b6f6');
-                if(stateRef.current.players[pId].type === 'human') playSound('gain');
+                if(stateRef.current.players[pId].type === 'human') playSound('food');
             });
         }
         
@@ -740,7 +742,7 @@ export const useGameLogic = () => {
              playSound('error');
          } else {
              addLog(`${p.name} fed family`, 'green');
-             playSound('click');
+             playSound('food');
          }
 
          scheduleNext(() => advanceFeedStep(), 200);
@@ -916,16 +918,28 @@ export const useGameLogic = () => {
              else if (key === 'reed') {
                  limit = p.res.reed;
                  if (!isFeedPhase && delta > 0) return p;
+                 
+                 const isUsed = p.workshopsUsed.reed;
+                 if (isUsed && delta > 0) return p;
+
                  if (delta > 0 && val >= 1) return p; // Workshop limit 1
              }
              else if (key === 'wood') {
                  limit = p.res.wood;
                  if (!isFeedPhase && delta > 0) return p;
+
+                 const isUsed = p.workshopsUsed.wood;
+                 if (isUsed && delta > 0) return p;
+
                  if (delta > 0 && val >= 1) return p; // Workshop limit 1
              }
              else if (key === 'clay') {
                  limit = p.res.clay;
                  if (!isFeedPhase && delta > 0) return p;
+
+                 const isUsed = p.workshopsUsed.clay;
+                 if (isUsed && delta > 0) return p;
+
                  if (delta > 0 && val >= 1) return p; // Workshop limit 1
              }
              else limit = p.animals[key as 'sheep'|'boar'|'cow'];
@@ -952,12 +966,8 @@ export const useGameLogic = () => {
         if (!p.conversionTemp) return;
         const t = p.conversionTemp;
         
-        let gain = t.grain; // Grain is 1:1 raw? Assume raw unless baked (but bake is separate action). 
-        // NOTE: Standard rules say grain can be baked (action) or cooked (if hearth/fireplace)? 
-        // Actually, grain usually needs Bake action. But here we simplify "eating raw" or converting? 
-        // Rules: "Grain can be converted to 1 food at any time."
-        gain += t.grain; 
-
+        let gain = t.grain; 
+        
         // Veg Raw
         gain += (t.vegRaw || 0);
 
@@ -984,20 +994,24 @@ export const useGameLogic = () => {
         gain += t.cow * maxCowRate;
 
         // Workshop conversions
+        const newP = { ...p, res: { ...p.res }, animals: { ...p.animals }, conversionTemp: null, workshopsUsed: { ...p.workshopsUsed } };
+
         const basket = p.majors.find(m => m.id === 'm6');
         if (basket && basket.convert && basket.convert.food) {
              gain += t.reed * basket.convert.food;
+             if (t.reed > 0) newP.workshopsUsed.reed = true;
         }
         const joinery = p.majors.find(m => m.id === 'm7');
         if (joinery && joinery.convert && joinery.convert.food) {
              gain += t.wood * joinery.convert.food;
+             if (t.wood > 0) newP.workshopsUsed.wood = true;
         }
         const pottery = p.majors.find(m => m.id === 'm8');
         if (pottery && pottery.convert && pottery.convert.food) {
              gain += t.clay * pottery.convert.food;
+             if (t.clay > 0) newP.workshopsUsed.clay = true;
         }
 
-        const newP = { ...p, res: { ...p.res }, animals: { ...p.animals }, conversionTemp: null };
         newP.res.grain -= t.grain; 
         
         const vegTotal = (t.vegRaw || 0) + (t.vegCook || 0);
@@ -1011,10 +1025,9 @@ export const useGameLogic = () => {
         
         addLog(`${p.name} converted resources to +${gain} Food`, p.color);
         updatePlayer(pIdx, () => newP);
-        playSound('cook');
+        playSound('food');
     };
     
-    // ... rest of the file
     // Animal Manager
     const toggleAnimalManager = () => {
         setIsAdjustingAnimals(prev => !prev);
@@ -1069,7 +1082,7 @@ export const useGameLogic = () => {
          if (p.type !== 'human' && p.type !== 'ai') return;
 
          // Use baseActions from state
-         const act = baseActions.find(a => a.id === actId) || roundCards.find(a => a.id === actId);
+         const act = baseActions.find(a => a.id === actId) || stateRef.current.gameState.roundCards.find(a => a.id === actId);
          if (!act) return;
          
          if (occupied[actId] !== undefined) {
@@ -1403,7 +1416,12 @@ export const useGameLogic = () => {
                             // @ts-ignore
                             finalP.res[act.res!] += amt;
                             resetActionAccumulation(act.id);
-                            playSound('pop');
+                            if (act.res === 'wood') playSound('wood');
+                            else if (act.res === 'clay') playSound('clay');
+                            else if (act.res === 'stone') playSound('stone');
+                            else if (act.res === 'reed') playSound('reed');
+                            else if (act.res === 'food') playSound('food');
+                            else playSound('pop');
                         }
                         addLog(`${p.name} took ${act.name}`, p.color);
                     } else if (act.type === 'res_combo') {
@@ -1667,12 +1685,12 @@ export const useGameLogic = () => {
              if (newFences.has(key)) {
                  newFences.delete(key);
                  res.wood++;
-                 playSound('wood');
+                 playSound('fence');
              } else {
                  if (res.wood > 0 && newFences.size < LIMIT_FENCES) {
                      newFences.add(key);
                      res.wood--;
-                     playSound('wood');
+                     playSound('fence');
                  } else {
                      playSound('error');
                  }
@@ -1733,26 +1751,26 @@ export const useGameLogic = () => {
             return p;
         });
     };
-
+    
     const openCardDetail = (card: MajorCard) => {
         setViewingCard(card);
         playSound('click');
-    }
+    };
+
     const closeCardDetail = () => {
         setViewingCard(null);
         playSound('click');
-    }
+    };
 
     return {
         gameState,
         players,
         logs,
-        floatText,
         clickAction,
         cancelMode,
-        confirmModeAction,
         handleFarmClick,
         handleFenceClick,
+        confirmModeAction,
         switchTool,
         toggleSeed,
         setSubAction,
@@ -1778,8 +1796,8 @@ export const useGameLogic = () => {
         discardFromManager,
         confirmOverflowEndTurn,
         resetOverflow,
-        confirmFeedPhase, 
-        resetFeed, // Exported
-        debug,
+        confirmFeedPhase,
+        resetFeed,
+        debug
     };
 };
