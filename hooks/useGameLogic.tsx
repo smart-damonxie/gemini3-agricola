@@ -50,7 +50,8 @@ export const useGameLogic = () => {
         turnPhase: 'action',
         overflowPlayer: null,
         wellRewards: {},
-        overflowSnapshot: null
+        overflowSnapshot: null,
+        feedSnapshot: null
     });
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [floatText, setFloatText] = useState<{ id: number, text: string, x: number, y: number }[]>([]);
@@ -165,7 +166,8 @@ export const useGameLogic = () => {
             turnPhase: 'action',
             overflowPlayer: null,
             wellRewards: {},
-            overflowSnapshot: null
+            overflowSnapshot: null,
+            feedSnapshot: null
         };
         
         stateRef.current.players = newPlayers;
@@ -693,10 +695,55 @@ export const useGameLogic = () => {
         const pIdx = harvestState.queue[harvestState.currentIdx];
         const p = stateRef.current.players[pIdx];
         if (p.type === 'human') {
-            updatePlayer(p.id, pp => ({...pp, harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0, wood: 0, clay: 0 }}));
+            // Take snapshot for Undo
+             const snapshotObj = { ...p, fences: Array.from(p.fences) };
+             updateGameState(prev => ({ ...prev, feedSnapshot: JSON.stringify(snapshotObj) }));
         } else {
             aiHarvestFeed(p);
         }
+    };
+
+    const resetFeed = () => {
+         const { harvestState, feedSnapshot } = stateRef.current.gameState;
+         if (!harvestState || !feedSnapshot) return;
+         
+         const pIdx = harvestState.queue[harvestState.currentIdx];
+         const oldP = JSON.parse(feedSnapshot);
+         oldP.fences = new Set(oldP.fences);
+         // Reset conversionTemp explicitly if snapshot doesn't cover it cleanly or to be safe
+         oldP.conversionTemp = null;
+         
+         updatePlayer(pIdx, () => oldP);
+         addLog("⏪ Reset feed actions", "white");
+         playSound('click');
+    };
+
+    const confirmFeedPhase = () => {
+         if (!stateRef.current.gameState.harvestState) return;
+         const pIdx = stateRef.current.gameState.harvestState.queue[stateRef.current.gameState.harvestState.currentIdx];
+         const p = stateRef.current.players[pIdx];
+
+         const need = p.res.maxWorkers * 2;
+         const pay = Math.min(p.res.food, need);
+         const begging = Math.max(0, need - pay);
+
+         updatePlayer(pIdx, pp => ({
+             ...pp,
+             res: { ...pp.res, food: pp.res.food - pay },
+             begging: pp.begging + begging
+         }));
+         
+         updateGameState(prev => ({ ...prev, feedSnapshot: null }));
+
+         if (begging > 0) {
+             addLog(`${p.name} took ${begging} begging cards`, 'red');
+             playSound('error');
+         } else {
+             addLog(`${p.name} fed family`, 'green');
+             playSound('click');
+         }
+
+         scheduleNext(() => advanceFeedStep(), 200);
     };
 
     const advanceFeedStep = () => {
@@ -817,91 +864,13 @@ export const useGameLogic = () => {
 
     // --- Actions ---
     const adjustHarvest = (key: keyof HarvestConversion, delta: number) => {
-        const { harvestState } = stateRef.current.gameState;
-        if (!harvestState) return;
-        const pIdx = harvestState.queue[harvestState.currentIdx];
-        updatePlayer(pIdx, p => {
-             if (!p.harvestTemp) return p;
-             const val = p.harvestTemp[key];
-             let limit = 0;
-             if (key === 'grain') limit = p.res.grain;
-             else if (key === 'veg') limit = p.res.veg;
-             else if (key === 'reed') limit = p.res.reed;
-             else if (key === 'wood') limit = p.res.wood;
-             else if (key === 'clay') limit = p.res.clay;
-             else limit = p.animals[key];
-
-             let newVal = val + delta;
-             if ((key === 'reed' || key === 'wood' || key === 'clay') && newVal > 1) newVal = 1;
-             
-             if (newVal >= 0 && newVal <= limit) return { ...p, harvestTemp: { ...p.harvestTemp, [key]: newVal } };
-             return p;
-        });
-        playSound('click');
+        // Not used with new UI
     };
     const resetHarvest = () => {
-        const { harvestState } = stateRef.current.gameState;
-        if (!harvestState) return;
-        const pIdx = harvestState.queue[harvestState.currentIdx];
-        updatePlayer(pIdx, p => ({ ...p, harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0, wood: 0, clay: 0 } }));
-        playSound('click');
+       // Not used with new UI
     };
     const confirmHarvest = () => {
-         const { harvestState, harvestSubPhase } = stateRef.current.gameState;
-         if (!harvestState) return;
-         const pIdx = harvestState.queue[harvestState.currentIdx];
-         const p = stateRef.current.players[pIdx];
-         if (!p.harvestTemp) return;
-         const t = p.harvestTemp;
-         
-         let gain = t.grain + t.veg;
-
-         let maxSheepRate = 0;
-         let maxBoarRate = 0;
-         let maxCowRate = 0;
-
-         p.majors.forEach(m => {
-             if (m.cook) {
-                 if (m.cook.sheep > maxSheepRate) maxSheepRate = m.cook.sheep;
-                 if (m.cook.boar > maxBoarRate) maxBoarRate = m.cook.boar;
-                 if (m.cook.cow > maxCowRate) maxCowRate = m.cook.cow;
-             }
-         });
-
-         gain += t.sheep * maxSheepRate;
-         gain += t.boar * maxBoarRate;
-         gain += t.cow * maxCowRate;
-
-         const basket = p.majors.find(m => m.id === 'm6');
-         if (basket && basket.convert && basket.convert.food) {
-             gain += t.reed * basket.convert.food;
-         }
-         const joinery = p.majors.find(m => m.id === 'm7');
-         if (joinery && joinery.convert && joinery.convert.food) {
-             gain += t.wood * joinery.convert.food;
-         }
-         const pottery = p.majors.find(m => m.id === 'm8');
-         if (pottery && pottery.convert && pottery.convert.food) {
-             gain += t.clay * pottery.convert.food;
-         }
-
-         const newP = { ...p, res: { ...p.res }, animals: { ...p.animals } };
-         newP.res.grain -= t.grain; newP.res.veg -= t.veg; newP.res.reed -= t.reed;
-         newP.res.wood -= t.wood; newP.res.clay -= t.clay;
-         newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; 
-         newP.res.food += gain; 
-         newP.harvestTemp = null; 
-
-         playSound('cook');
-
-         if (harvestSubPhase === 'feed') {
-             const need = newP.res.maxWorkers * 2;
-             const pay = Math.min(newP.res.food, need);
-             newP.res.food -= pay;
-             if (need - pay > 0) newP.begging += (need - pay);
-             updatePlayer(pIdx, () => newP);
-             scheduleNext(() => advanceFeedStep(), 200);
-         }
+       // Not used with new UI
     };
     
     // Anytime conversion
@@ -916,9 +885,10 @@ export const useGameLogic = () => {
 
         const p = stateRef.current.players[pIdx];
         if (p.conversionTemp) updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: null }));
-        else updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0, wood: 0, clay: 0 } }));
+        else updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: { grain: 0, veg: 0, vegRaw: 0, vegCook: 0, sheep: 0, boar: 0, cow: 0, reed: 0, wood: 0, clay: 0 } }));
         playSound('click');
     };
+    
     const adjustConversion = (key: keyof HarvestConversion, delta: number) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         let pIdx = (startPlayer + turnIdx) % 4;
@@ -927,22 +897,48 @@ export const useGameLogic = () => {
         } else if (stateRef.current.gameState.turnPhase === 'overflow' && stateRef.current.gameState.overflowPlayer !== null) {
             pIdx = stateRef.current.gameState.overflowPlayer;
         }
+        
+        const isFeedPhase = stateRef.current.gameState.harvestSubPhase === 'feed';
 
         updatePlayer(pIdx, p => {
              if (!p.conversionTemp) return p;
-             const val = p.conversionTemp[key];
+             const val = p.conversionTemp[key] || 0;
              let limit = 0;
+             
              if (key === 'grain') limit = p.res.grain;
-             else if (key === 'veg') limit = p.res.veg;
-             else if (key === 'reed') limit = p.res.reed;
-             else if (key === 'wood') limit = p.res.wood;
-             else if (key === 'clay') limit = p.res.clay;
-             else limit = p.animals[key];
-             if (val + delta >= 0 && val + delta <= limit) return { ...p, conversionTemp: { ...p.conversionTemp, [key]: val + delta } };
+             else if (key === 'vegRaw' || key === 'vegCook') {
+                 // Shared limit for vegetables
+                 const currentTotalVeg = (p.conversionTemp.vegRaw || 0) + (p.conversionTemp.vegCook || 0);
+                 if (delta > 0 && currentTotalVeg >= p.res.veg) return p;
+                 limit = 999; // Handled by shared check above
+                 if (delta < 0 && val <= 0) return p;
+             }
+             else if (key === 'reed') {
+                 limit = p.res.reed;
+                 if (!isFeedPhase && delta > 0) return p;
+                 if (delta > 0 && val >= 1) return p; // Workshop limit 1
+             }
+             else if (key === 'wood') {
+                 limit = p.res.wood;
+                 if (!isFeedPhase && delta > 0) return p;
+                 if (delta > 0 && val >= 1) return p; // Workshop limit 1
+             }
+             else if (key === 'clay') {
+                 limit = p.res.clay;
+                 if (!isFeedPhase && delta > 0) return p;
+                 if (delta > 0 && val >= 1) return p; // Workshop limit 1
+             }
+             else limit = p.animals[key as 'sheep'|'boar'|'cow'];
+
+             const newVal = val + delta;
+             if (newVal >= 0 && (limit === 999 || newVal <= limit)) {
+                 return { ...p, conversionTemp: { ...p.conversionTemp, [key]: newVal } };
+             }
              return p;
         });
         playSound('click');
     };
+    
     const confirmConversion = () => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         let pIdx = (startPlayer + turnIdx) % 4;
@@ -956,7 +952,23 @@ export const useGameLogic = () => {
         if (!p.conversionTemp) return;
         const t = p.conversionTemp;
         
-        let gain = t.grain + t.veg;
+        let gain = t.grain; // Grain is 1:1 raw? Assume raw unless baked (but bake is separate action). 
+        // NOTE: Standard rules say grain can be baked (action) or cooked (if hearth/fireplace)? 
+        // Actually, grain usually needs Bake action. But here we simplify "eating raw" or converting? 
+        // Rules: "Grain can be converted to 1 food at any time."
+        gain += t.grain; 
+
+        // Veg Raw
+        gain += (t.vegRaw || 0);
+
+        // Veg Cook
+        let maxVegCookRate = 0;
+        p.majors.forEach(m => {
+            if (m.cook && m.cook.veg > maxVegCookRate) maxVegCookRate = m.cook.veg;
+        });
+        if (t.vegCook && t.vegCook > 0) {
+            gain += t.vegCook * (maxVegCookRate > 0 ? maxVegCookRate : 1);
+        }
         
         let maxSheepRate = 0; let maxBoarRate = 0; let maxCowRate = 0;
         p.majors.forEach(m => {
@@ -971,20 +983,38 @@ export const useGameLogic = () => {
         gain += t.boar * maxBoarRate;
         gain += t.cow * maxCowRate;
 
+        // Workshop conversions
         const basket = p.majors.find(m => m.id === 'm6');
         if (basket && basket.convert && basket.convert.food) {
              gain += t.reed * basket.convert.food;
         }
+        const joinery = p.majors.find(m => m.id === 'm7');
+        if (joinery && joinery.convert && joinery.convert.food) {
+             gain += t.wood * joinery.convert.food;
+        }
+        const pottery = p.majors.find(m => m.id === 'm8');
+        if (pottery && pottery.convert && pottery.convert.food) {
+             gain += t.clay * pottery.convert.food;
+        }
 
         const newP = { ...p, res: { ...p.res }, animals: { ...p.animals }, conversionTemp: null };
-        newP.res.grain -= t.grain; newP.res.veg -= t.veg; newP.res.reed -= t.reed;
-        newP.res.wood -= t.wood; newP.res.clay -= t.clay;
-        newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; newP.res.food += gain;
+        newP.res.grain -= t.grain; 
+        
+        const vegTotal = (t.vegRaw || 0) + (t.vegCook || 0);
+        newP.res.veg -= vegTotal;
+        
+        newP.res.reed -= t.reed;
+        newP.res.wood -= t.wood; 
+        newP.res.clay -= t.clay;
+        newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; 
+        newP.res.food += gain;
+        
         addLog(`${p.name} converted resources to +${gain} Food`, p.color);
         updatePlayer(pIdx, () => newP);
         playSound('cook');
     };
-
+    
+    // ... rest of the file
     // Animal Manager
     const toggleAnimalManager = () => {
         setIsAdjustingAnimals(prev => !prev);
@@ -1748,6 +1778,8 @@ export const useGameLogic = () => {
         discardFromManager,
         confirmOverflowEndTurn,
         resetOverflow,
+        confirmFeedPhase, 
+        resetFeed, // Exported
         debug,
     };
 };

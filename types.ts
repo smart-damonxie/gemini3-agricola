@@ -40,6 +40,8 @@ export interface Action {
 export interface HarvestConversion {
   grain: number;
   veg: number;
+  vegRaw: number; // New: Eat raw (1 food)
+  vegCook: number; // New: Cook (2-3 food)
   sheep: number;
   boar: number;
   cow: number;
@@ -127,6 +129,7 @@ export interface GameState {
   overflowPlayer: number | null;
   wellRewards: { [round: number]: number[] }; // round -> playerIds to award food
   overflowSnapshot: string | null; // For Undo during overflow management
+  feedSnapshot: string | null; // For Undo during feed phase
 }
 
 export interface LogEntry {

@@ -48,6 +48,8 @@ const App: React.FC = () => {
     discardFromManager,
     confirmOverflowEndTurn,
     resetOverflow,
+    confirmFeedPhase,
+    resetFeed,
     debug
   } = useGameLogic();
 
@@ -75,12 +77,12 @@ const App: React.FC = () => {
     return gameState.baseActions.find(a => a.id === actId) || gameState.roundCards.find(a => a.id === actId);
   };
 
-  const isHumanHarvest = gameState.harvestPhase && activePlayer.type === 'human' && activePlayer.harvestTemp;
   const isConverting = activePlayer.type === 'human' && activePlayer.conversionTemp;
   const isHumanTurn = activePlayer.type === 'human' && !gameState.harvestPhase;
   const actionDetails = activePlayer.tempMode ? getActionDetails(activePlayer.tempMode.actId) : null;
   const humanPlayer = players.find(p => p.type === 'human');
   const hasBaker = activePlayer.majors.some(m => m.bakeRate || m.specialBake);
+  const isFeedPhase = gameState.harvestSubPhase === 'feed' && activePlayer.type === 'human';
 
   const getStage = (r: number) => {
       if (r <= 4) return 1;
@@ -97,11 +99,20 @@ const App: React.FC = () => {
   };
 
   // Helper to check conversion capability
-  const canConvert = (res: 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed'|'wood'|'clay') => {
-      if (res === 'grain' || res === 'veg') return true; 
+  const canConvert = (res: 'grain'|'veg'|'vegRaw'|'vegCook'|'sheep'|'boar'|'cow'|'reed'|'wood'|'clay') => {
+      if (res === 'grain') return true; 
+      if (res === 'veg' || res === 'vegRaw') return true;
+      
+      if (res === 'vegCook') {
+           return activePlayer.majors.some(m => m.cook && m.cook.veg > 0);
+      }
+
       if (['sheep', 'boar', 'cow'].includes(res)) {
           return activePlayer.majors.some(m => m.cook && m.cook[res as 'sheep'|'boar'|'cow']);
       }
+      // Workshop conversions only allowed during FEED phase
+      if (gameState.harvestSubPhase !== 'feed') return false;
+
       if (res === 'reed') {
           return activePlayer.majors.some(m => m.id === 'm6');
       }
@@ -114,6 +125,14 @@ const App: React.FC = () => {
       return false;
   };
 
+  const getMaxVegCookRate = () => {
+      let maxRate = 0;
+      activePlayer.majors.forEach(m => {
+          if (m.cook && m.cook.veg > maxRate) maxRate = m.cook.veg;
+      });
+      return maxRate;
+  }
+
   return (
     <div className="min-h-screen bg-stone-900 text-stone-200 font-sans selection:bg-yellow-500/30 overflow-x-hidden">
       
@@ -124,6 +143,36 @@ const App: React.FC = () => {
             <h1 className="text-xl font-bold text-yellow-500 tracking-tight">Agricola Lite</h1>
             <RoundTracker currentRound={gameState.round} />
           </div>
+
+          {/* FEED PHASE BANNER */}
+          {isFeedPhase && (
+               <div className="absolute left-1/2 transform -translate-x-1/2 top-2 bg-orange-900/90 border-2 border-orange-500 text-white px-6 py-2 rounded-lg shadow-xl animate-bounce-short flex items-center gap-4 z-50">
+                   <div className="flex flex-col items-center">
+                       <span className="text-[10px] text-orange-300 uppercase font-bold tracking-wider">Feeding Phase</span>
+                       <span className="text-sm font-bold">Food Needed: <span className="text-yellow-400">{activePlayer.res.maxWorkers * 2}</span></span>
+                   </div>
+                   <div className="h-8 w-px bg-orange-700"></div>
+                   <div className="flex flex-col items-center">
+                       <span className="text-[10px] text-gray-400 uppercase">Available</span>
+                       <span className={`text-xl font-bold ${activePlayer.res.food < activePlayer.res.maxWorkers * 2 ? 'text-red-400' : 'text-green-400'}`}>{activePlayer.res.food}</span>
+                   </div>
+                   <div className="h-8 w-px bg-orange-700"></div>
+                   <div className="flex gap-2">
+                       <button 
+                           onClick={resetFeed} 
+                           className="bg-stone-700 hover:bg-stone-600 text-stone-200 font-bold py-1 px-3 rounded shadow text-xs uppercase"
+                       >
+                           ↺ Reset Actions
+                       </button>
+                       <button 
+                           onClick={confirmFeedPhase} 
+                           className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-1 px-4 rounded shadow text-xs uppercase"
+                       >
+                           Pay Food
+                       </button>
+                   </div>
+               </div>
+          )}
           
           <div className="flex items-center gap-4">
             {/* ACTION INTERACTION OVERLAY */}
@@ -171,6 +220,7 @@ const App: React.FC = () => {
                                     </button>
                                     <button 
                                         onClick={() => setSubAction('sow')}
+                                        disabled={!activePlayer.tempMode.existingVertices} 
                                         className={`px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1 ${activePlayer.tempMode.subAction === 'sow' ? 'bg-yellow-700 text-white ring-1 ring-white' : 'text-stone-400 hover:text-white'}`}
                                     >
                                         🌱 Sow
@@ -475,80 +525,102 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {isHumanHarvest && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/90 backdrop-blur">
-             <div className="bg-stone-800 border-2 border-orange-500 rounded-xl p-6 max-w-lg w-full shadow-2xl">
-                 <h2 className="text-2xl font-bold text-orange-400 mb-2">
-                     {gameState.harvestSubPhase === 'feed' ? '🍲 Feed Your Family' : '👶 Manage Animals'}
-                 </h2>
-                 {gameState.harvestSubPhase === 'feed' && (
-                     <div className="space-y-4">
-                         <div className="p-3 bg-stone-900 rounded text-center">
-                             <div className="text-sm text-gray-400">Required Food</div>
-                             <div className="text-3xl font-bold text-white">{activePlayer.res.maxWorkers * 2}</div>
-                         </div>
-                         <div className="grid grid-cols-2 gap-4">
-                             <div className="text-center"><div className="text-sm text-gray-400">Available</div><div className="text-xl font-bold text-yellow-500">{activePlayer.res.food}</div></div>
-                             <div className="text-center"><div className="text-sm text-gray-400">Potential Gain</div><div className="text-xl font-bold text-green-500">+{ (activePlayer.harvestTemp?.grain||0) + (activePlayer.harvestTemp?.veg||0) + (activePlayer.harvestTemp?.sheep||0)*2 + (activePlayer.harvestTemp?.boar||0)*2 + (activePlayer.harvestTemp?.cow||0)*3 + (activePlayer.harvestTemp?.reed||0)*3 + (activePlayer.harvestTemp?.wood||0)*2 + (activePlayer.harvestTemp?.clay||0)*2 }</div></div>
-                         </div>
-                         <div className="space-y-2">
-                             <div className="text-sm font-bold text-gray-300">Convert Resources:</div>
-                             {['grain','veg','sheep','boar','cow', 'reed', 'wood', 'clay'].map(res => {
-                                 const resKey = res as 'grain'|'veg'|'sheep'|'boar'|'cow'|'reed'|'wood'|'clay';
-                                 let owned = 0;
-                                 if (resKey === 'grain') owned = activePlayer.res.grain;
-                                 else if (resKey === 'veg') owned = activePlayer.res.veg;
-                                 else if (resKey === 'reed') owned = activePlayer.res.reed;
-                                 else if (resKey === 'wood') owned = activePlayer.res.wood;
-                                 else if (resKey === 'clay') owned = activePlayer.res.clay;
-                                 else owned = activePlayer.animals[resKey as 'sheep'|'boar'|'cow'];
-                                 
-                                 const allowed = canConvert(resKey);
-
-                                 if (owned === 0 && !allowed) return null; 
-                                 if ((resKey === 'reed' || resKey === 'wood' || resKey === 'clay') && !allowed) return null; 
-
-                                 return (
-                                     <div key={res} className={`flex justify-between items-center bg-stone-900 p-2 rounded ${!allowed ? 'opacity-50' : ''}`}>
-                                         <div className="flex flex-col">
-                                            <span className="capitalize text-stone-300 w-20 font-bold">{res}</span>
-                                            <span className="text-[10px] text-stone-500">You have: {owned}</span>
-                                            {!allowed && <span className="text-[9px] text-red-400">Needs Improvement</span>}
-                                         </div>
-                                         <div className="flex items-center gap-3">
-                                             <button disabled={!allowed} onClick={() => adjustHarvest(resKey, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-50 disabled:cursor-not-allowed">-</button>
-                                             <span className="w-8 text-center font-bold">{(activePlayer.harvestTemp as any)[res]}</span>
-                                             <button disabled={!allowed} onClick={() => adjustHarvest(resKey, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-50 disabled:cursor-not-allowed">+</button>
-                                         </div>
-                                     </div>
-                                 );
-                             })}
-                         </div>
-                     </div>
-                 )}
-                 <div className="mt-6 flex justify-end gap-3">
-                     <button onClick={resetHarvest} className="px-4 py-2 text-sm text-stone-400 hover:text-white">Reset</button>
-                     <button onClick={confirmHarvest} className="px-6 py-2 bg-orange-600 hover:bg-orange-500 text-white font-bold rounded shadow-lg">Confirm & Eat</button>
-                 </div>
-             </div>
-        </div>
-      )}
-
+      {/* NEW CONVERT UI MODAL */}
       {isConverting && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
              <div className="bg-stone-800 border-2 border-yellow-600 rounded-xl p-6 max-w-sm w-full shadow-2xl">
-                 <h2 className="text-xl font-bold text-yellow-500 mb-4">Anytime Conversion</h2>
-                 <div className="space-y-2">
-                     {['grain','veg','sheep','boar','cow'].map(res => (
-                         <div key={res} className="flex justify-between items-center bg-stone-900 p-2 rounded">
-                             <span className="capitalize text-stone-300 w-16">{res}</span>
-                             <div className="flex items-center gap-3">
-                                 <button onClick={() => adjustConversion(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">-</button>
-                                 <span className="w-6 text-center font-bold">{(activePlayer.conversionTemp as any)[res]}</span>
-                                 <button onClick={() => adjustConversion(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">+</button>
+                 <h2 className="text-xl font-bold text-yellow-500 mb-2">Anytime Conversion</h2>
+                 <div className="grid grid-cols-[1fr_80px_1fr] gap-2 mb-2 text-xs text-gray-400 border-b border-gray-700 pb-1">
+                     <span>Resource</span>
+                     <span className="text-center">Your Supply</span>
+                     <span className="text-right">Convert</span>
+                 </div>
+                 
+                 <div className="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
+                     {/* Standard Resources */}
+                     {['grain','veg','sheep','boar','cow'].map(res => {
+                         // Skip veg here, will handle specifically below to split raw/cook
+                         if (res === 'veg') return null;
+
+                         const allowed = canConvert(res as any);
+                         const count = activePlayer.animals[res as any] || activePlayer.res[res as any] || 0;
+                         if (!allowed && count === 0) return null;
+
+                         return (
+                             <div key={res} className={`grid grid-cols-[1fr_80px_1fr] items-center bg-stone-900 p-2 rounded ${!allowed ? 'opacity-50' : ''}`}>
+                                 <div className="flex flex-col">
+                                     <span className="capitalize text-stone-300 font-bold">{res}</span>
+                                     <span className="text-[9px] text-gray-500">Cook</span>
+                                 </div>
+                                 <div className="text-center font-mono text-white">{count}</div>
+                                 <div className="flex items-center justify-end gap-2">
+                                     <button disabled={!allowed} onClick={() => adjustConversion(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-30 text-white font-bold">-</button>
+                                     <span className="w-4 text-center text-yellow-400 font-bold">{(activePlayer.conversionTemp as any)[res]}</span>
+                                     <button disabled={!allowed} onClick={() => adjustConversion(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-30 text-white font-bold">+</button>
+                                 </div>
                              </div>
-                         </div>
-                     ))}
+                         );
+                     })}
+
+                     {/* Vegetables Split */}
+                     {activePlayer.res.veg > 0 && (
+                         <>
+                             {/* Eat Raw */}
+                             <div className="grid grid-cols-[1fr_80px_1fr] items-center bg-stone-900 p-2 rounded">
+                                 <div className="flex flex-col">
+                                     <span className="capitalize text-stone-300 font-bold">Veg (Raw)</span>
+                                     <span className="text-[9px] text-gray-500">1 Food</span>
+                                 </div>
+                                 <div className="text-center font-mono text-white">{activePlayer.res.veg}</div>
+                                 <div className="flex items-center justify-end gap-2">
+                                     <button onClick={() => adjustConversion('vegRaw', -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 text-white font-bold">-</button>
+                                     <span className="w-4 text-center text-yellow-400 font-bold">{activePlayer.conversionTemp?.vegRaw || 0}</span>
+                                     <button onClick={() => adjustConversion('vegRaw', 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 text-white font-bold">+</button>
+                                 </div>
+                             </div>
+                             {/* Cook */}
+                             {canConvert('vegCook') && (
+                                <div className="grid grid-cols-[1fr_80px_1fr] items-center bg-stone-900 p-2 rounded border border-orange-900/50">
+                                    <div className="flex flex-col">
+                                        <span className="capitalize text-stone-300 font-bold">Veg (Cook)</span>
+                                        <span className="text-[9px] text-orange-400">{getMaxVegCookRate()} Food</span>
+                                    </div>
+                                    <div className="text-center font-mono text-white">{activePlayer.res.veg}</div>
+                                    <div className="flex items-center justify-end gap-2">
+                                        <button onClick={() => adjustConversion('vegCook', -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 text-white font-bold">-</button>
+                                        <span className="w-4 text-center text-yellow-400 font-bold">{activePlayer.conversionTemp?.vegCook || 0}</span>
+                                        <button onClick={() => adjustConversion('vegCook', 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 text-white font-bold">+</button>
+                                    </div>
+                                </div>
+                             )}
+                         </>
+                     )}
+
+                     {/* Workshops */}
+                     {['reed','wood','clay'].map(res => {
+                         const allowed = canConvert(res as any);
+                         const count = activePlayer.res[res as any];
+                         if (!allowed && count === 0) return null;
+                         if (!allowed) return null; // Only show if allowed (Feed phase)
+
+                         const currentVal = (activePlayer.conversionTemp as any)[res];
+                         const limitReached = currentVal >= 1;
+
+                         return (
+                             <div key={res} className={`grid grid-cols-[1fr_80px_1fr] items-center bg-stone-900 p-2 rounded ${limitReached ? 'opacity-75' : ''}`}>
+                                 <div className="flex flex-col">
+                                     <span className="capitalize text-stone-300 font-bold">{res}</span>
+                                     <span className="text-[9px] text-blue-400">Workshop (Max 1)</span>
+                                 </div>
+                                 <div className="text-center font-mono text-white">{count}</div>
+                                 <div className="flex items-center justify-end gap-2">
+                                     <button onClick={() => adjustConversion(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 text-white font-bold">-</button>
+                                     <span className="w-4 text-center text-yellow-400 font-bold">{currentVal}</span>
+                                     <button disabled={limitReached} onClick={() => adjustConversion(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold">+</button>
+                                 </div>
+                             </div>
+                         );
+                     })}
                  </div>
                  <div className="mt-6 flex justify-end gap-3">
                      <button onClick={() => toggleConversion()} className="px-4 py-2 text-sm text-stone-400 hover:text-white">Cancel</button>
