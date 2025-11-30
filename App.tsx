@@ -45,6 +45,7 @@ const App: React.FC = () => {
     cookFromManager,
     discardFromManager,
     confirmOverflowEndTurn,
+    resetOverflow,
     debug
   } = useGameLogic();
 
@@ -389,6 +390,7 @@ const App: React.FC = () => {
                onDiscard={p.type === 'human' ? discardAnimal : undefined}
                onCook={p.type === 'human' ? cookOverflow : undefined}
                onConfirmOverflow={p.type === 'human' ? confirmOverflowEndTurn : undefined}
+               onResetOverflow={p.type === 'human' ? resetOverflow : undefined}
              />
            ))}
         </div>
@@ -403,7 +405,7 @@ const App: React.FC = () => {
           <AnimalManager 
               player={humanPlayer} 
               onClose={toggleAnimalManager} 
-              onSave={saveAnimalAssignment} 
+              onSave={(assignments) => saveAnimalAssignment(humanPlayer.id, assignments)} 
               onCook={cookFromManager}
               onDiscard={discardFromManager}
               pendingBreeding={humanPlayer.pendingBreeding || undefined}
@@ -474,23 +476,6 @@ const App: React.FC = () => {
                                      </div>
                                  );
                              })}
-                         </div>
-                     </div>
-                 )}
-                 {gameState.harvestSubPhase === 'breed' && (
-                     <div className="space-y-4">
-                         <p className="text-stone-300 text-sm">Convert excess animals to food.</p>
-                         <div className="space-y-2">
-                             {['sheep','boar','cow'].map(res => (
-                                 <div key={res} className="flex justify-between items-center bg-stone-900 p-2 rounded">
-                                     <span className="capitalize text-stone-300 w-20">{res}</span>
-                                     <div className="flex items-center gap-3">
-                                         <button onClick={() => adjustHarvest(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">-</button>
-                                         <span className="w-8 text-center font-bold">{(activePlayer.harvestTemp as any)[res]}</span>
-                                         <button onClick={() => adjustHarvest(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600">+</button>
-                                     </div>
-                                 </div>
-                             ))}
                          </div>
                      </div>
                  )}

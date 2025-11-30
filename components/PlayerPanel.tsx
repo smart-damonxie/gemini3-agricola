@@ -19,6 +19,7 @@ interface Props {
   onDiscard?: (type: 'sheep'|'boar'|'cow') => void;
   onCook?: (type: 'sheep'|'boar'|'cow') => void;
   onConfirmOverflow?: () => void;
+  onResetOverflow?: () => void;
 }
 
 const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
@@ -30,7 +31,7 @@ const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
 const PlayerPanel: React.FC<Props> = ({ 
     player, isActive, isNextStart, 
     onFarmClick, onFenceClick, onMajorClick, onConvertClick, onAdjustClick,
-    isOverflowing, onDiscard, onCook, onConfirmOverflow
+    isOverflowing, onDiscard, onCook, onConfirmOverflow, onResetOverflow
 }) => {
   const allocation = calculateAllocation(player);
   const score = calculateScore(player);
@@ -130,8 +131,13 @@ const PlayerPanel: React.FC<Props> = ({
       {/* OVERFLOW WARNING SECTION */}
       {isOverflowing && allocation.overflow > 0 && (
           <div className="bg-red-900/80 border border-red-500 p-2 rounded mb-2 flex flex-col gap-1 animate-bounce-short">
-              <div className="flex gap-2 items-center text-xs font-bold text-white mb-1">
-                  <span>⚠️ Overflow! Manage Animals:</span>
+              <div className="flex justify-between items-center mb-1">
+                  <span className="text-xs font-bold text-white">⚠️ Overflow! Manage Animals:</span>
+                  {onResetOverflow && (
+                      <button onClick={onResetOverflow} className="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-0.5 rounded border border-slate-500 text-white">
+                          ↩ Undo
+                      </button>
+                  )}
               </div>
               
               <div className="flex flex-wrap gap-2 items-center">
@@ -161,7 +167,14 @@ const PlayerPanel: React.FC<Props> = ({
       {isOverflowing && allocation.overflow === 0 && (
           <div className="bg-green-900/80 border border-green-500 p-2 rounded mb-2 flex justify-between items-center">
               <span className="text-green-100 text-xs">Overflow Resolved.</span>
-              <button onClick={onConfirmOverflow} className="px-3 py-0.5 bg-green-600 hover:bg-green-500 rounded text-xs font-bold text-white">End Turn</button>
+              <div className="flex gap-2">
+                  {onResetOverflow && (
+                      <button onClick={onResetOverflow} className="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-0.5 rounded border border-slate-500 text-white">
+                          ↩ Undo
+                      </button>
+                  )}
+                  <button onClick={onConfirmOverflow} className="px-3 py-0.5 bg-green-600 hover:bg-green-500 rounded text-xs font-bold text-white">End Turn</button>
+              </div>
           </div>
       )}
 

@@ -130,7 +130,9 @@ const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDis
         const zone = updatedZones[zoneIndex];
 
         if (zone.assigned.length >= zone.capacity) return; // Full
-        
+        // STRICT RULE: Mixed animals not allowed (except empty)
+        if (zone.assigned.length > 0 && zone.assigned[0] !== type) return;
+
         zone.assigned.push(type);
         setZones(updatedZones);
         recalcAvailable(updatedZones, player.animals, pendingBreeding || {sheep:0, boar:0, cow:0});

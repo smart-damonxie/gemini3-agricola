@@ -48,7 +48,8 @@ export const useGameLogic = () => {
         futureResources: {},
         turnPhase: 'action',
         overflowPlayer: null,
-        wellRewards: {}
+        wellRewards: {},
+        overflowSnapshot: null
     });
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [floatText, setFloatText] = useState<{ id: number, text: string, x: number, y: number }[]>([]);
@@ -162,7 +163,8 @@ export const useGameLogic = () => {
             futureResources: {},
             turnPhase: 'action',
             overflowPlayer: null,
-            wellRewards: {}
+            wellRewards: {},
+            overflowSnapshot: null
         };
         
         stateRef.current.players = newPlayers;
@@ -415,7 +417,7 @@ export const useGameLogic = () => {
         if (p.type === 'human' && animalsGained) {
             const alloc = calculateAllocation(newP);
             if (alloc.overflow > 0) {
-                updateGameState(prev => ({ ...prev, turnPhase: 'overflow', overflowPlayer: p.id }));
+                startOverflow(p.id);
                 return; 
             }
         }
@@ -445,6 +447,28 @@ export const useGameLogic = () => {
     };
 
     // --- Overflow Management ---
+    const startOverflow = (pId: number) => {
+        const p = stateRef.current.players[pId];
+        const snapshotObj = { ...p, fences: Array.from(p.fences) };
+        updateGameState(prev => ({ 
+            ...prev, 
+            turnPhase: 'overflow', 
+            overflowPlayer: pId,
+            overflowSnapshot: JSON.stringify(snapshotObj)
+        }));
+    };
+
+    const resetOverflow = () => {
+        const { overflowPlayer, overflowSnapshot } = stateRef.current.gameState;
+        if (overflowPlayer === null || !overflowSnapshot) return;
+        
+        const oldP = JSON.parse(overflowSnapshot);
+        oldP.fences = new Set(oldP.fences);
+        
+        updatePlayer(overflowPlayer, () => oldP);
+        addLog("⏪ Reset actions for this phase", "white");
+    };
+
     const discardAnimal = (type: 'sheep'|'boar'|'cow') => {
         const { overflowPlayer } = stateRef.current.gameState;
         if (overflowPlayer === null) return;
@@ -491,8 +515,14 @@ export const useGameLogic = () => {
             if (isNewborn && newP.newborns[type] > 0) {
                 newP.newborns[type]--;
             } else if (!isNewborn) {
-                // If discarding adult, ensure we don't accidentally dip into newborns count if data was desynced
-                // (Though logic should prevent button click)
+                // If discarding adult, ensure we don't accidentally dip into newborns count
+                if (newP.animals[type] < newP.newborns[type]) {
+                    // Logic issue if this happens, but clamp it
+                    // Actually, if we discard an adult, we just reduce total. 
+                    // Since newborns <= total, if new total < newborns, we must have discarded a newborn implicitly?
+                    // But here we explicitly distinguish. 
+                    // If user clicks "Discard Adult", we decrement total.
+                }
             }
             // Safety clamp
             if (newP.newborns[type] > newP.animals[type]) newP.newborns[type] = newP.animals[type];
@@ -580,7 +610,7 @@ export const useGameLogic = () => {
     };
 
     const confirmOverflowEndTurn = () => {
-        const { overflowPlayer } = stateRef.current.gameState;
+        const { overflowPlayer, harvestPhase } = stateRef.current.gameState;
         if (overflowPlayer === null) return;
         const p = stateRef.current.players[overflowPlayer];
         const alloc = calculateAllocation(p);
@@ -590,8 +620,21 @@ export const useGameLogic = () => {
             return;
         }
         
-        updateGameState(prev => ({ ...prev, turnPhase: 'action', overflowPlayer: null, turnIdx: prev.turnIdx + 1 }));
-        scheduleNext(() => nextTurn(), 500);
+        updateGameState(prev => ({ 
+            ...prev, 
+            turnPhase: 'action', 
+            overflowPlayer: null, 
+            overflowSnapshot: null 
+        }));
+
+        if (harvestPhase) {
+            // If in harvest phase, we resume the breeding/feeding loop
+            scheduleNext(() => advanceBreedStep(), 500);
+        } else {
+            // If in normal turn, we advance to next player
+            updateGameState(prev => ({ ...prev, turnIdx: prev.turnIdx + 1 }));
+            scheduleNext(() => nextTurn(), 500);
+        }
     };
 
     // ================= HARVEST LOGIC =================
@@ -721,26 +764,34 @@ export const useGameLogic = () => {
             return;
         }
 
-        const simP = { ...p, animals: { 
-            sheep: p.animals.sheep + newborns.sheep,
-            boar: p.animals.boar + newborns.boar,
-            cow: p.animals.cow + newborns.cow
-        }};
+        // Add newborns immediately to player state
+        const simP = { 
+            ...p, 
+            animals: { 
+                sheep: p.animals.sheep + newborns.sheep,
+                boar: p.animals.boar + newborns.boar,
+                cow: p.animals.cow + newborns.cow
+            },
+            newborns: {
+                sheep: p.newborns.sheep + newborns.sheep,
+                boar: p.newborns.boar + newborns.boar,
+                cow: p.newborns.cow + newborns.cow
+            }
+        };
+
+        updatePlayer(p.id, () => simP);
 
         if (p.type === 'human') {
-            updatePlayer(p.id, pp => ({
-                ...pp,
-                pendingBreeding: newborns,
-                harvestTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0, wood: 0, clay: 0 } 
-            }));
-            setIsAdjustingAnimals(true);
+            // Trigger interactive overflow logic (reusing standard overflow UI)
+            startOverflow(p.id);
+            // Don't advance step here; confirmOverflowEndTurn will do it
         } else {
              const alloc = calculateAllocation(simP);
              if (alloc.overflow > 0) {
                  const discarded = aiDiscardOverflow(simP, alloc.overflow);
                  simP.animals.sheep -= discarded.sheep; simP.animals.boar -= discarded.boar; simP.animals.cow -= discarded.cow;
+                 updatePlayer(p.id, () => simP);
              }
-             updatePlayer(p.id, () => simP);
              setTimeout(() => advanceBreedStep(), 600);
         }
     };
@@ -752,28 +803,7 @@ export const useGameLogic = () => {
     };
 
     const resolveBreeding = (p: Player) => {
-        setIsAdjustingAnimals(false);
-        if (!p.pendingBreeding) return;
-        const newborns = p.pendingBreeding;
-        
-        // Merge pending newborns into animals list AND mark them as newborns
-        const finalP = { 
-            ...p, 
-            animals: {
-                sheep: p.animals.sheep + newborns.sheep,
-                boar: p.animals.boar + newborns.boar,
-                cow: p.animals.cow + newborns.cow
-            }, 
-            newborns: {
-                sheep: newborns.sheep,
-                boar: newborns.boar,
-                cow: newborns.cow
-            },
-            pendingBreeding: null
-        };
-        
-        updatePlayer(p.id, () => finalP);
-        scheduleNext(() => advanceBreedStep(), 200);
+        // Legacy: kept for compatibility if needed, but logic moved to processBreedPhase direct update
     };
 
     // --- Actions ---
@@ -859,21 +889,34 @@ export const useGameLogic = () => {
              updatePlayer(pIdx, () => newP);
              scheduleNext(() => advanceFeedStep(), 200);
          } else if (harvestSubPhase === 'breed') {
-             resolveBreeding(newP); 
+             // resolveBreeding(newP); // No longer needed
          }
     };
     
     // Anytime conversion
     const toggleConversion = () => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
+        // In harvest phase, active player is different
+        let pIdx = (startPlayer + turnIdx) % 4;
+        if (stateRef.current.gameState.harvestState) {
+            pIdx = stateRef.current.gameState.harvestState.queue[stateRef.current.gameState.harvestState.currentIdx];
+        } else if (stateRef.current.gameState.turnPhase === 'overflow' && stateRef.current.gameState.overflowPlayer !== null) {
+            pIdx = stateRef.current.gameState.overflowPlayer;
+        }
+
         const p = stateRef.current.players[pIdx];
         if (p.conversionTemp) updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: null }));
         else updatePlayer(pIdx, pp => ({ ...pp, conversionTemp: { grain: 0, veg: 0, sheep: 0, boar: 0, cow: 0, reed: 0, wood: 0, clay: 0 } }));
     };
     const adjustConversion = (key: keyof HarvestConversion, delta: number) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
+        let pIdx = (startPlayer + turnIdx) % 4;
+        if (stateRef.current.gameState.harvestState) {
+            pIdx = stateRef.current.gameState.harvestState.queue[stateRef.current.gameState.harvestState.currentIdx];
+        } else if (stateRef.current.gameState.turnPhase === 'overflow' && stateRef.current.gameState.overflowPlayer !== null) {
+            pIdx = stateRef.current.gameState.overflowPlayer;
+        }
+
         updatePlayer(pIdx, p => {
              if (!p.conversionTemp) return p;
              const val = p.conversionTemp[key];
@@ -890,7 +933,13 @@ export const useGameLogic = () => {
     };
     const confirmConversion = () => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
+        let pIdx = (startPlayer + turnIdx) % 4;
+        if (stateRef.current.gameState.harvestState) {
+            pIdx = stateRef.current.gameState.harvestState.queue[stateRef.current.gameState.harvestState.currentIdx];
+        } else if (stateRef.current.gameState.turnPhase === 'overflow' && stateRef.current.gameState.overflowPlayer !== null) {
+            pIdx = stateRef.current.gameState.overflowPlayer;
+        }
+
         const p = stateRef.current.players[pIdx];
         if (!p.conversionTemp) return;
         const t = p.conversionTemp;
@@ -925,14 +974,8 @@ export const useGameLogic = () => {
 
     // Animal Manager
     const toggleAnimalManager = () => setIsAdjustingAnimals(prev => !prev);
-    const saveAnimalAssignment = (assignments: { [key: number]: ResourceType[] }) => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        let pIdx = (startPlayer + turnIdx) % 4;
-        if (stateRef.current.gameState.turnPhase === 'overflow' && stateRef.current.gameState.overflowPlayer !== null) {
-            pIdx = stateRef.current.gameState.overflowPlayer;
-        }
-
-        updatePlayer(pIdx, p => ({ ...p, assignedAnimals: assignments }));
+    const saveAnimalAssignment = (targetPId: number, assignments: { [key: number]: ResourceType[] }) => {
+        updatePlayer(targetPId, p => ({ ...p, assignedAnimals: assignments }));
         setIsAdjustingAnimals(false);
     };
 
@@ -1255,8 +1298,9 @@ export const useGameLogic = () => {
                          const alloc = calculateAllocation(finalP);
                          if (alloc.overflow > 0) {
                              const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
-                             updateGameState(prev => ({ ...prev, occupied: newOccupied, turnPhase: 'overflow', overflowPlayer: pId }));
+                             updateGameState(prev => ({ ...prev, occupied: newOccupied }));
                              updatePlayer(pId, () => ({ ...finalP, res: { ...finalP.res, workers: finalP.res.workers - 1 }, tempMode: null }));
+                             startOverflow(pId);
                              return; 
                          }
                     }
@@ -1576,6 +1620,7 @@ export const useGameLogic = () => {
         cookFromManager,
         discardFromManager,
         confirmOverflowEndTurn,
+        resetOverflow,
         debug,
     };
 };

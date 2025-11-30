@@ -126,6 +126,7 @@ export interface GameState {
   turnPhase: 'action' | 'overflow';
   overflowPlayer: number | null;
   wellRewards: { [round: number]: number[] }; // round -> playerIds to award food
+  overflowSnapshot: string | null; // For Undo during overflow management
 }
 
 export interface LogEntry {
