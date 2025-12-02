@@ -1,8 +1,7 @@
-
 import React, { useState, useEffect } from 'react';
 import { Player, ResourceType } from '../types';
 import { analyzeFarmLayout } from '../utils/gameLogic';
-import { playSound } from '../utils/sound';
+// replaced: import { playSound } from '../utils/sound';
 
 interface Props {
     player: Player;
@@ -11,6 +10,7 @@ interface Props {
     onCook?: (type: 'sheep'|'boar'|'cow', assignments: { [key: number]: ResourceType[] }) => void;
     onDiscard?: (type: 'sheep'|'boar'|'cow', isNewborn: boolean, assignments: { [key: number]: ResourceType[] }) => void;
     pendingBreeding?: { sheep: number, boar: number, cow: number };
+    playSound: (type: string) => void; // New prop
 }
 
 interface Zone {
@@ -21,7 +21,7 @@ interface Zone {
     assigned: ResourceType[];
 }
 
-const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDiscard, pendingBreeding }) => {
+const AnimalManager: React.FC<Props> = ({ player, onClose, onSave, onCook, onDiscard, pendingBreeding, playSound }) => {
     const [zones, setZones] = useState<Zone[]>([]);
     const [availableAdults, setAvailableAdults] = useState({ sheep: 0, boar: 0, cow: 0 });
     const [availableNewborns, setAvailableNewborns] = useState({ sheep: 0, boar: 0, cow: 0 });

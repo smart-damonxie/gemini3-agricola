@@ -1,10 +1,10 @@
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES, LIMIT_FENCES } from '../constants';
 import { calculateAllocation, hasNeighbor, validateFenceRules, getFenceVertices } from '../utils/gameLogic';
 import { getAIAction, aiDiscardOverflow } from '../utils/aiStrategy';
-import { playSound } from '../utils/sound';
+// replaced: import { playSound, preloadSounds } from '../utils/sound';
+import { useGameAudio } from './useGameAudio';
 
 const createInitialPlayers = (): Player[] => Array.from({ length: 4 }, (_, i) => ({
     id: i,
@@ -30,6 +30,9 @@ const createInitialPlayers = (): Player[] => Array.from({ length: 4 }, (_, i) =>
 }));
 
 export const useGameLogic = () => {
+    // Integrate Audio Hook
+    const { playSound, toggleMute, isMuted } = useGameAudio();
+
     const [players, setPlayers] = useState<Player[]>(createInitialPlayers());
     const [gameState, setGameState] = useState<GameState>({
         round: 1,
@@ -136,6 +139,7 @@ export const useGameLogic = () => {
     useEffect(() => {
         if (initRef.current) return;
         initRef.current = true;
+        // preloadSounds(); // Handled by hook
         startGame();
         return () => clearGameTimer();
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1109,6 +1113,7 @@ export const useGameLogic = () => {
                  res: { ...pp.res, maxWorkers: pp.res.maxWorkers + 1 },
                  tempMode: { mode: act.mode!, actId }
              }));
+             playSound('baby');
              return;
          }
 
@@ -1421,7 +1426,9 @@ export const useGameLogic = () => {
                             else if (act.res === 'stone') playSound('stone');
                             else if (act.res === 'reed') playSound('reed');
                             else if (act.res === 'food') playSound('food');
-                            else playSound('pop');
+                            else if (act.res === 'grain') playSound('grain');
+                            else if (act.res === 'veg') playSound('vegetables');
+                            else playSound('click');
                         }
                         addLog(`${p.name} took ${act.name}`, p.color);
                     } else if (act.type === 'res_combo') {
@@ -1798,6 +1805,10 @@ export const useGameLogic = () => {
         resetOverflow,
         confirmFeedPhase,
         resetFeed,
-        debug
+        debug,
+        // Expose new audio controls
+        playSound,
+        toggleMute,
+        isMuted
     };
 };

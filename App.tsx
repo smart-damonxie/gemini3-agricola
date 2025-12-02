@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -11,7 +10,7 @@ import AnimalManager from './components/AnimalManager';
 import GameOverModal from './components/GameOverModal';
 import { calculateAllocation } from './utils/gameLogic';
 import { Player } from './types';
-import { toggleMute, isMuted } from './utils/sound';
+// replaced: import { toggleMute, isMuted } from './utils/sound';
 
 const App: React.FC = () => {
   const { 
@@ -50,13 +49,17 @@ const App: React.FC = () => {
     resetOverflow,
     confirmFeedPhase,
     resetFeed,
-    debug
+    debug,
+    // Audio props from useGameLogic
+    playSound,
+    toggleMute,
+    isMuted
   } = useGameLogic();
 
   const [showMajorList, setShowMajorList] = useState(false);
   const [showScoring, setShowScoring] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
-  const [muted, setMuted] = useState(isMuted());
+  // removed: const [muted, setMuted] = useState(isMuted());
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -94,8 +97,8 @@ const App: React.FC = () => {
   };
 
   const handleToggleMute = () => {
-      const newState = toggleMute();
-      setMuted(newState);
+      toggleMute();
+      // No need to set local state, we use isMuted directly from hook
   };
 
   // Helper to check conversion capability
@@ -378,9 +381,9 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2">
                 <button 
                     onClick={handleToggleMute} 
-                    className={`px-3 py-1 rounded text-xs border transition-colors w-20 text-center ${muted ? 'bg-red-900/50 border-red-800 text-red-300' : 'bg-green-900/50 border-green-800 text-green-300'}`}
+                    className={`px-3 py-1 rounded text-xs border transition-colors w-20 text-center ${isMuted ? 'bg-red-900/50 border-red-800 text-red-300' : 'bg-green-900/50 border-green-800 text-green-300'}`}
                 >
-                    {muted ? '🔇 Muted' : '🔊 Sound'}
+                    {isMuted ? '🔇 Muted' : '🔊 Sound'}
                 </button>
                 <button onClick={() => setShowScoring(true)} className="px-3 py-1 bg-stone-700 hover:bg-stone-600 rounded text-xs border border-stone-600 transition-colors">
                 📊 Scoring
@@ -505,6 +508,7 @@ const App: React.FC = () => {
               onCook={cookFromManager}
               onDiscard={discardFromManager}
               pendingBreeding={humanPlayer.pendingBreeding || undefined}
+              playSound={playSound}
           />
       )}
 
