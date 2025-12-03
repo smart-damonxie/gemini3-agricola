@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -8,6 +9,7 @@ import RoundTracker from './components/RoundTracker';
 import TestPanel from './components/TestPanel';
 import AnimalManager from './components/AnimalManager';
 import GameOverModal from './components/GameOverModal';
+import MajorGallery from './components/MajorGallery';
 import { calculateAllocation } from './utils/gameLogic';
 import { Player } from './types';
 // replaced: import { toggleMute, isMuted } from './utils/sound';
@@ -56,7 +58,7 @@ const App: React.FC = () => {
     isMuted
   } = useGameLogic();
 
-  const [showMajorList, setShowMajorList] = useState(false);
+  const [showMajorGallery, setShowMajorGallery] = useState(false);
   const [showScoring, setShowScoring] = useState(false);
   const [isTestMode, setIsTestMode] = useState(false);
   // removed: const [muted, setMuted] = useState(isMuted());
@@ -143,7 +145,7 @@ const App: React.FC = () => {
       <header className="bg-stone-800 border-b border-stone-700 p-3 shadow-lg sticky top-0 z-50">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold text-yellow-500 tracking-tight">Agricola Lite</h1>
+            <h1 className="text-xl font-bold text-yellow-500 tracking-tight hidden sm:block">Agricola Lite</h1>
             <RoundTracker currentRound={gameState.round} />
           </div>
 
@@ -378,21 +380,28 @@ const App: React.FC = () => {
                 </div>
             )}
 
-            <div className="flex items-center gap-2">
+            {/* MINIMALIST CONTROL TOOLBAR */}
+            <div className="flex items-center gap-1 bg-stone-900/50 p-1 rounded-full border border-stone-700/50 backdrop-blur-sm">
                 <button 
                     onClick={handleToggleMute} 
-                    className={`px-3 py-1 rounded text-xs border transition-colors w-20 text-center ${isMuted ? 'bg-red-900/50 border-red-800 text-red-300' : 'bg-green-900/50 border-green-800 text-green-300'}`}
+                    className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${isMuted ? 'text-red-400 hover:bg-red-900/30' : 'text-green-400 hover:bg-green-900/30'}`}
+                    title={isMuted ? 'Unmute' : 'Mute'}
                 >
-                    {isMuted ? '🔇 Muted' : '🔊 Sound'}
+                    {isMuted ? '🔇' : '🔊'}
                 </button>
-                <button onClick={() => setShowScoring(true)} className="px-3 py-1 bg-stone-700 hover:bg-stone-600 rounded text-xs border border-stone-600 transition-colors">
-                📊 Scoring
+                <div className="w-px h-4 bg-stone-700"></div>
+                <button onClick={() => setShowMajorGallery(true)} className="w-8 h-8 rounded-full flex items-center justify-center text-orange-400 hover:bg-orange-900/30 hover:text-orange-300 transition-colors" title="Majors Gallery">
+                    🃏
                 </button>
-                <button onClick={() => setIsTestMode(true)} className="px-3 py-1 bg-purple-900/50 hover:bg-purple-800/50 text-purple-300 rounded text-xs border border-purple-800 transition-colors">
-                🧪 Test
+                <button onClick={() => setShowScoring(true)} className="w-8 h-8 rounded-full flex items-center justify-center text-blue-400 hover:bg-blue-900/30 hover:text-blue-300 transition-colors" title="Scoring Rules">
+                    📊
                 </button>
-                <button onClick={startGame} className="px-3 py-1 bg-red-900/50 hover:bg-red-800/50 text-red-300 rounded text-xs border border-red-800 transition-colors">
-                Restart
+                <button onClick={() => setIsTestMode(true)} className="w-8 h-8 rounded-full flex items-center justify-center text-purple-400 hover:bg-purple-900/30 hover:text-purple-300 transition-colors" title="Test Panel">
+                    🧪
+                </button>
+                <div className="w-px h-4 bg-stone-700"></div>
+                <button onClick={startGame} className="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors" title="Restart Game">
+                    🔄
                 </button>
             </div>
           </div>
@@ -497,6 +506,7 @@ const App: React.FC = () => {
 
       {/* OVERLAYS & MODALS */}
       {showScoring && <ScoringTable onClose={() => setShowScoring(false)} />}
+      {showMajorGallery && <MajorGallery availableMajors={gameState.majors} onClose={() => setShowMajorGallery(false)} />}
       <TestPanel isOpen={isTestMode} onClose={() => setIsTestMode(false)} gameState={gameState} players={players} debug={debug} />
       {gameState.gameOver && <GameOverModal players={players} onRestart={startGame} />}
 
@@ -517,6 +527,22 @@ const App: React.FC = () => {
            <div className="bg-orange-100 text-stone-900 p-6 rounded-lg max-w-sm w-full border-4 border-orange-800 shadow-2xl relative" onClick={e => e.stopPropagation()}>
                <button onClick={closeCardDetail} className="absolute top-2 right-2 text-stone-500 hover:text-stone-900 font-bold">✕</button>
                <h3 className="text-xl font-bold mb-2 border-b border-orange-300 pb-2">{viewingCard.name}</h3>
+               
+               {/* Card Image */}
+               <div className="mb-4 rounded-lg overflow-hidden border-2 border-orange-300 shadow-md">
+                   <img 
+                        src={`/assets/majors/${viewingCard.id}.png`} 
+                        alt={viewingCard.name}
+                        className="w-full h-auto object-cover"
+                        onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            // Show generic placeholder text if image fails
+                            e.currentTarget.parentElement?.classList.add('bg-orange-200', 'flex', 'items-center', 'justify-center', 'h-40');
+                            e.currentTarget.parentElement!.innerHTML = '<span class="text-orange-800 font-bold opacity-50">No Image</span>';
+                        }}
+                   />
+               </div>
+
                <div className="space-y-2 text-sm">
                    <p><span className="font-bold">Cost:</span> {Object.entries(viewingCard.cost).map(([k,v]) => `${v} ${k}`).join(', ')}</p>
                    <p><span className="font-bold">Score:</span> {viewingCard.score} VP</p>
