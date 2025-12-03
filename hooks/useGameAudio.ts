@@ -19,6 +19,7 @@ const FILE_NAMES: { [key: string]: string } = {
     'success': 'success.mp3',
     'click': 'click.wav',
     'baby': 'baby.wav',
+    'harvest': 'harvest.mp3',
 };
 
 // Map game logical events to specific sound keys
@@ -27,7 +28,7 @@ const SOUND_MAPPING: { [key: string]: string } = {
     'build': 'hammer',
     'fence': 'hammer',
     'renovate': 'hammer',
-    'harvest': 'success',
+    'harvest': 'harvest',
     'fanfare': 'success',
     'baby': 'baby',
     'pop': 'click',

@@ -660,7 +660,6 @@ export const useGameLogic = () => {
             harvestPhase: true, 
             harvestSubPhase: 'field' 
         }));
-        playSound('fanfare');
         
         scheduleNext(() => processFieldPhase(), 500);
     };
