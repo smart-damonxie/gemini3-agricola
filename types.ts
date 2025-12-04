@@ -1,3 +1,4 @@
+import { ResourceType, Cost, MajorCard, Action, HarvestConversion, HarvestSubPhase, TempMode, GameState, LogEntry, FarmLayout, Allocation } from './types';
 
 export type ResourceType = 'wood' | 'clay' | 'reed' | 'stone' | 'food' | 'grain' | 'veg' | 'sheep' | 'boar' | 'cow';
 
@@ -78,6 +79,7 @@ export interface Player {
     boar: number;
     cow: number;
   };
+  newbornCount: number; // Tracks new workers born this round (feed cost 1 instead of 2)
   farm: number[]; // 0:Empty, 1:Room, 2:Field, 5:Stable
   farmCounts: number[];
   farmContent: (ResourceType | null)[];
@@ -105,7 +107,7 @@ export interface TempMode {
   pending?: { [key: number]: 'room' | 'stable' };
   currentTool?: 'room' | 'stable';
   selectedMajorId?: string;
-  subAction?: 'sow' | 'bake' | 'both' | 'plow'; // For Sow/Bake choice or Plow/Sow choice
+  subAction?: 'sow' | 'bake' | 'both' | 'plow' | 'upgrade'; // Added upgrade for Fireplace
   bakeTargets?: { [majorId: string]: number }; // Tracks grain assigned to specific baking majors
 }
 

@@ -14,6 +14,7 @@ const createInitialPlayers = (): Player[] => Array.from({ length: 4 }, (_, i) =>
     res: { wood: 0, clay: 0, reed: 0, stone: 0, food: (i === 0 ? 2 : 3), grain: 0, veg: 0, workers: 2, maxWorkers: 2 },
     animals: { sheep: 0, boar: 0, cow: 0 },
     newborns: { sheep: 0, boar: 0, cow: 0 },
+    newbornCount: 0,
     farm: Array(15).fill(0).map((_, idx) => (idx === 5 || idx === 10) ? 1 : 0),
     farmCounts: Array(15).fill(0),
     farmContent: Array(15).fill(null),
@@ -316,6 +317,7 @@ export const useGameLogic = () => {
         const newPs = stateRef.current.players.map(p => ({
             ...p,
             newborns: { sheep: 0, boar: 0, cow: 0 },
+            newbornCount: 0, // Reset newborn counter for feeding
             workshopsUsed: { reed: false, wood: false, clay: false }
         }));
         stateRef.current.players = newPs;
@@ -418,6 +420,7 @@ export const useGameLogic = () => {
         } else if (act.mode === 'grow' || act.mode === 'grow_force') {
              if (newP.res.maxWorkers < 5) {
                  newP.res.maxWorkers += 1;
+                 newP.newbornCount += 1; // Increment newborn count for AI
                  addLog(`${p.name} grew family to ${newP.res.maxWorkers}`, p.color);
              }
         } else {
@@ -660,6 +663,7 @@ export const useGameLogic = () => {
             harvestPhase: true, 
             harvestSubPhase: 'field' 
         }));
+        playSound('fanfare');
         
         scheduleNext(() => processFieldPhase(), 500);
     };
@@ -728,7 +732,9 @@ export const useGameLogic = () => {
          const pIdx = stateRef.current.gameState.harvestState.queue[stateRef.current.gameState.harvestState.currentIdx];
          const p = stateRef.current.players[pIdx];
 
-         const need = p.res.maxWorkers * 2;
+         // Optimized Formula: Adults eat 2, Newborns eat 1
+         const need = (p.res.maxWorkers - p.newbornCount) * 2 + p.newbornCount * 1;
+         
          const pay = Math.min(p.res.food, need);
          const begging = Math.max(0, need - pay);
 
@@ -744,7 +750,7 @@ export const useGameLogic = () => {
              addLog(`${p.name} took ${begging} begging cards`, 'red');
              playSound('error');
          } else {
-             addLog(`${p.name} fed family`, 'green');
+             addLog(`${p.name} fed family (${need} food)`, 'green');
              playSound('food');
          }
 
@@ -759,7 +765,7 @@ export const useGameLogic = () => {
 
     const aiHarvestFeed = (p: Player) => {
         const newP: Player = { ...p, res: { ...p.res }, animals: { ...p.animals }, begging: p.begging };
-        const need = newP.res.maxWorkers * 2;
+        const need = (newP.res.maxWorkers - newP.newbornCount) * 2 + newP.newbornCount * 1;
         let deficit = need - newP.res.food;
         const keepSeeds = deficit > 0 ? 0 : 1; 
         if (deficit > 0 && newP.res.grain > keepSeeds) { 
@@ -1110,6 +1116,7 @@ export const useGameLogic = () => {
              updatePlayer(p.id, pp => ({
                  ...pp,
                  res: { ...pp.res, maxWorkers: pp.res.maxWorkers + 1 },
+                 newbornCount: pp.newbornCount + 1, // Increment newborn count
                  tempMode: { mode: act.mode!, actId }
              }));
              playSound('baby');
@@ -1313,6 +1320,56 @@ export const useGameLogic = () => {
                      if (!card) {
                          isValid = false; errMsg = "Card not found/already taken.";
                      } else {
+                         // --- FIREPLACE UPGRADE LOGIC ---
+                         const isFireplace = mId === 'm3' || mId === 'm4';
+                         const hearth = finalP.majors.find(m => m.id === 'm1' || m.id === 'm2');
+                         const isUpgrade = isFireplace && hearth && p.tempMode.subAction === 'upgrade';
+
+                         if (isUpgrade) {
+                             // Perform Swap
+                             finalP.majors = finalP.majors.filter(m => m.id !== hearth.id); // Remove Hearth
+                             finalP.majors.push(card); // Add Fireplace
+                             addLog(`${p.name} upgraded ${hearth.name} to ${card.name}`, p.color);
+                             playSound('build');
+
+                             // Update Game State: Remove Fireplace from pool, Add Hearth to pool
+                             const newMajors = majors.filter(m => m.id !== mId);
+                             newMajors.push(hearth); // Return hearth
+                             updateGameState(prev => ({ ...prev, majors: newMajors }));
+
+                             // Trigger Bake Immediate if applicable (Fireplaces allow baking)
+                             if (card.type === 'bake' && finalP.res.grain > 0) {
+                                 const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
+                                 updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null }));
+                                 
+                                 const bakeTargets: {[key: string]: number} = {};
+                                 finalP.majors.forEach(m => {
+                                     if (m.bakeRate || m.specialBake) {
+                                         bakeTargets[m.id] = 0;
+                                     }
+                                 });
+                                 
+                                 updatePlayer(pId, () => ({
+                                     ...finalP,
+                                     res: { ...finalP.res, workers: finalP.res.workers - 1 },
+                                     tempMode: { 
+                                         mode: 'bake_immediate', 
+                                         actId: p.tempMode!.actId, 
+                                         selectedMajorId: mId,
+                                         bakeTargets
+                                     }
+                                 }));
+                                 return;
+                             }
+                             // End turn for upgrade path
+                             const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
+                             updatePlayer(pId, () => ({ ...finalP, res: { ...finalP.res, workers: finalP.res.workers - 1 }, tempMode: null }));
+                             updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null, turnIdx: prev.turnIdx + 1 }));
+                             scheduleNext(() => nextTurn(), 500);
+                             return;
+                         }
+
+                         // --- STANDARD PURCHASE LOGIC ---
                          let canAfford = true;
                          const res = { ...finalP.res };
                          for(const [resType, amt] of Object.entries(card.cost)) {
@@ -1719,7 +1776,7 @@ export const useGameLogic = () => {
         playSound('click');
     };
     
-    const setSubAction = (sub: 'plow'|'sow') => {
+    const setSubAction = (sub: 'plow'|'sow'|'upgrade') => {
          const { startPlayer, turnIdx } = stateRef.current.gameState;
          const pIdx = (startPlayer + turnIdx) % 4;
          updatePlayer(pIdx, p => ({...p, tempMode: { ...p.tempMode!, subAction: sub }}));

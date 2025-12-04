@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -138,56 +137,36 @@ const App: React.FC = () => {
       return maxRate;
   }
 
+  // Helper to check if upgrade is available for current selected major
+  const canUpgradeHearth = () => {
+      if (!activePlayer.tempMode || !activePlayer.tempMode.selectedMajorId) return false;
+      const mId = activePlayer.tempMode.selectedMajorId;
+      if (mId !== 'm3' && mId !== 'm4') return false;
+      return activePlayer.majors.some(m => m.id === 'm1' || m.id === 'm2');
+  };
+
   return (
     <div className="min-h-screen bg-stone-900 text-stone-200 font-sans selection:bg-yellow-500/30 overflow-x-hidden">
       
       {/* HEADER */}
-      <header className="bg-stone-800 border-b border-stone-700 p-3 shadow-lg sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
+      <header className="bg-stone-800 border-b border-stone-700 p-2 shadow-lg sticky top-0 z-50 h-[64px]">
+        <div className="max-w-7xl mx-auto flex items-center justify-between h-full relative">
+          
+          {/* LEFT: Branding & Round */}
           <div className="flex items-center gap-4">
             <h1 className="text-xl font-bold text-yellow-500 tracking-tight hidden sm:block">Agricola Lite</h1>
             <RoundTracker currentRound={gameState.round} />
           </div>
 
-          {/* FEED PHASE BANNER */}
-          {isFeedPhase && (
-               <div className="absolute left-1/2 transform -translate-x-1/2 top-2 bg-orange-900/90 border-2 border-orange-500 text-white px-6 py-2 rounded-lg shadow-xl animate-bounce-short flex items-center gap-4 z-50">
-                   <div className="flex flex-col items-center">
-                       <span className="text-[10px] text-orange-300 uppercase font-bold tracking-wider">Feeding Phase</span>
-                       <span className="text-sm font-bold">Food Needed: <span className="text-yellow-400">{activePlayer.res.maxWorkers * 2}</span></span>
-                   </div>
-                   <div className="h-8 w-px bg-orange-700"></div>
-                   <div className="flex flex-col items-center">
-                       <span className="text-[10px] text-gray-400 uppercase">Available</span>
-                       <span className={`text-xl font-bold ${activePlayer.res.food < activePlayer.res.maxWorkers * 2 ? 'text-red-400' : 'text-green-400'}`}>{activePlayer.res.food}</span>
-                   </div>
-                   <div className="h-8 w-px bg-orange-700"></div>
-                   <div className="flex gap-2">
-                       <button 
-                           onClick={resetFeed} 
-                           className="bg-stone-700 hover:bg-stone-600 text-stone-200 font-bold py-1 px-3 rounded shadow text-xs uppercase"
-                       >
-                           ↺ Reset Actions
-                       </button>
-                       <button 
-                           onClick={confirmFeedPhase} 
-                           className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-1 px-4 rounded shadow text-xs uppercase"
-                       >
-                           Pay Food
-                       </button>
-                   </div>
-               </div>
-          )}
-          
-          <div className="flex items-center gap-4">
-            {/* ACTION INTERACTION OVERLAY */}
+          {/* RIGHT: Action Interaction Overlay (In-flow to push left content) */}
+          <div className="flex items-center gap-4 ml-auto">
             {activePlayer.tempMode && activePlayer.type === 'human' && (
                 <div className="animate-fadeIn">
-                    <div className="bg-stone-800/95 border-2 border-yellow-600 px-5 py-1.5 shadow-2xl rounded-[30px] flex items-center gap-3 backdrop-blur-sm">
+                    <div className="bg-stone-800/95 border-2 border-yellow-600 px-4 py-1 shadow-2xl rounded-[30px] flex items-center gap-3 backdrop-blur-sm">
                     
-                    <div className="flex flex-col border-r border-stone-600 pr-4">
-                        <span className="text-[9px] text-yellow-500 uppercase font-bold tracking-wider leading-none">Action</span>
-                        <span className="text-sm font-bold text-white whitespace-nowrap">
+                    <div className="flex flex-col border-r border-stone-600 pr-3">
+                        <span className="text-[8px] text-yellow-500 uppercase font-bold tracking-wider leading-none">Action</span>
+                        <span className="text-xs font-bold text-white whitespace-nowrap">
                             {activePlayer.tempMode.mode === 'sow_bake_choice' ? 'Sow/Bake' : 
                             activePlayer.tempMode.mode === 'bake_immediate' ? 'Bake' :
                             activePlayer.tempMode.mode === 'plow_sow' ? 'Plow + Sow' :
@@ -352,6 +331,7 @@ const App: React.FC = () => {
                             </div>
                         )}
 
+                        {/* RENO */}
                         {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && activePlayer.houseType !== 'stone' && (
                             <button 
                                 onClick={renovate}
@@ -359,6 +339,25 @@ const App: React.FC = () => {
                             >
                                 Renovate
                             </button>
+                        )}
+
+                        {/* FIREPLACE UPGRADE TOGGLE */}
+                        {canUpgradeHearth() && (
+                            <div className="flex bg-stone-900 rounded-full p-0.5 gap-1 border border-orange-500/50">
+                                <button 
+                                    onClick={() => setSubAction(undefined)} // Reset to standard buy
+                                    className={`px-2 py-1 rounded-full text-[10px] font-bold ${activePlayer.tempMode.subAction !== 'upgrade' ? 'bg-orange-600 text-white' : 'text-stone-400 hover:text-white'}`}
+                                >
+                                    Buy (Cost)
+                                </button>
+                                <button 
+                                    onClick={() => setSubAction('upgrade')}
+                                    className={`px-2 py-1 rounded-full text-[10px] font-bold ${activePlayer.tempMode.subAction === 'upgrade' ? 'bg-green-600 text-white' : 'text-stone-400 hover:text-white'}`}
+                                    title="Return Hearth to get Fireplace for free"
+                                >
+                                    Upgrade (Return Hearth)
+                                </button>
+                            </div>
                         )}
                         
                         <div className="h-4 w-px bg-stone-600 mx-1"></div>
@@ -407,6 +406,36 @@ const App: React.FC = () => {
           </div>
         </div>
       </header>
+
+      {/* FEED PHASE BANNER */}
+      {isFeedPhase && (
+           <div className="fixed left-1/2 transform -translate-x-1/2 top-20 bg-orange-900/95 border-2 border-orange-500 text-white px-6 py-2 rounded-lg shadow-xl animate-bounce-short flex items-center gap-4 z-[60]">
+               <div className="flex flex-col items-center">
+                   <span className="text-[10px] text-orange-300 uppercase font-bold tracking-wider">Feeding Phase</span>
+                   <span className="text-sm font-bold">Food Needed: <span className="text-yellow-400">{(activePlayer.res.maxWorkers - activePlayer.newbornCount) * 2 + activePlayer.newbornCount * 1}</span></span>
+               </div>
+               <div className="h-8 w-px bg-orange-700"></div>
+               <div className="flex flex-col items-center">
+                   <span className="text-[10px] text-gray-400 uppercase">Available</span>
+                   <span className={`text-xl font-bold ${activePlayer.res.food < ((activePlayer.res.maxWorkers - activePlayer.newbornCount) * 2 + activePlayer.newbornCount * 1) ? 'text-red-400' : 'text-green-400'}`}>{activePlayer.res.food}</span>
+               </div>
+               <div className="h-8 w-px bg-orange-700"></div>
+               <div className="flex gap-2">
+                   <button 
+                       onClick={resetFeed} 
+                       className="bg-stone-700 hover:bg-stone-600 text-stone-200 font-bold py-1 px-3 rounded shadow text-xs uppercase"
+                   >
+                       ↺ Reset Actions
+                   </button>
+                   <button 
+                       onClick={confirmFeedPhase} 
+                       className="bg-orange-600 hover:bg-orange-500 text-white font-bold py-1 px-4 rounded shadow text-xs uppercase"
+                   >
+                       Pay Food
+                   </button>
+               </div>
+           </div>
+      )}
 
       {/* MAIN GRID LAYOUT: ACTIONS (Left 5 cols) | PLAYERS (Right 7 cols) */}
       <main className="max-w-7xl mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-6">
