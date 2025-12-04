@@ -69,7 +69,17 @@ const App: React.FC = () => {
     }
   }, [logs]);
 
+  // Auto-open Major Gallery when selecting a major action
   let activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
+  useEffect(() => {
+      if (activePlayer?.type === 'human' && activePlayer.tempMode && !activePlayer.tempMode.selectedMajorId) {
+          const mode = activePlayer.tempMode.mode;
+          if (mode === 'major' || mode === 'reno_major') {
+              setShowMajorGallery(true);
+          }
+      }
+  }, [activePlayer?.tempMode?.mode, activePlayer?.tempMode?.actId, activePlayer?.id]);
+
   if (gameState.harvestPhase && gameState.harvestState) {
       activePlayer = players[gameState.harvestState.queue[gameState.harvestState.currentIdx]];
   }
@@ -87,6 +97,16 @@ const App: React.FC = () => {
   const humanPlayer = players.find(p => p.type === 'human');
   const hasBaker = activePlayer.majors.some(m => m.bakeRate || m.specialBake);
   const isFeedPhase = gameState.harvestSubPhase === 'feed' && activePlayer.type === 'human';
+
+  // Determine if we are currently selecting a major
+  const isSelectingMajor = activePlayer?.type === 'human' && 
+                           activePlayer?.tempMode && 
+                           (activePlayer.tempMode.mode === 'major' || activePlayer.tempMode.mode === 'reno_major');
+
+  const handleMajorSelect = (majorId: string) => {
+      selectMajor(majorId);
+      setShowMajorGallery(false);
+  };
 
   const getStage = (r: number) => {
       if (r <= 4) return 1;
@@ -316,18 +336,28 @@ const App: React.FC = () => {
                         )}
 
                         {(activePlayer.tempMode.mode === 'major' || (activePlayer.tempMode.mode === 'reno_major' && activePlayer.houseType !== 'wood')) && (
-                            <div className="absolute top-12 left-0 z-50 flex flex-col gap-1 max-h-48 overflow-y-auto w-48 border border-stone-600 rounded bg-stone-900 p-1 scrollbar-thin shadow-xl">
-                                {gameState.majors.map(m => (
+                            // Major Selection Button / Display
+                            <div className="flex items-center gap-2">
+                                {activePlayer.tempMode.selectedMajorId ? (
+                                    <div className="flex items-center gap-2 bg-stone-900/80 px-2 py-1 rounded border border-yellow-600">
+                                        <span className="text-[10px] text-yellow-400 font-bold">
+                                            Selected: {gameState.majors.find(m => m.id === activePlayer.tempMode!.selectedMajorId)?.name || 'Unknown'}
+                                        </span>
+                                        <button 
+                                            onClick={() => setShowMajorGallery(true)}
+                                            className="px-2 py-0.5 bg-stone-700 hover:bg-stone-600 text-[9px] rounded text-white"
+                                        >
+                                            Change
+                                        </button>
+                                    </div>
+                                ) : (
                                     <button 
-                                        key={m.id} 
-                                        onClick={() => selectMajor(m.id)}
-                                        className={`text-left text-xs px-2 py-1 rounded flex justify-between items-center ${activePlayer.tempMode?.selectedMajorId === m.id ? 'bg-yellow-700 text-white' : 'hover:bg-stone-800 text-stone-300'}`}
+                                        onClick={() => setShowMajorGallery(true)}
+                                        className="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 text-white rounded font-bold text-[10px] animate-pulse border border-yellow-500"
                                     >
-                                        <span>{m.name}</span>
-                                        <span className="text-[9px] opacity-70">{m.score}VP</span>
+                                        Select Major
                                     </button>
-                                ))}
-                                {gameState.majors.length === 0 && <span className="text-xs text-gray-500 italic p-1">No majors left</span>}
+                                )}
                             </div>
                         )}
 
@@ -535,7 +565,13 @@ const App: React.FC = () => {
 
       {/* OVERLAYS & MODALS */}
       {showScoring && <ScoringTable onClose={() => setShowScoring(false)} />}
-      {showMajorGallery && <MajorGallery availableMajors={gameState.majors} onClose={() => setShowMajorGallery(false)} />}
+      {showMajorGallery && (
+          <MajorGallery 
+              availableMajors={gameState.majors} 
+              onClose={() => setShowMajorGallery(false)} 
+              onSelect={isSelectingMajor ? handleMajorSelect : undefined}
+          />
+      )}
       <TestPanel isOpen={isTestMode} onClose={() => setIsTestMode(false)} gameState={gameState} players={players} debug={debug} />
       {gameState.gameOver && <GameOverModal players={players} onRestart={startGame} />}
 
