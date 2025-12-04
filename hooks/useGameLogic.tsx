@@ -663,7 +663,7 @@ export const useGameLogic = () => {
             harvestPhase: true, 
             harvestSubPhase: 'field' 
         }));
-        playSound('fanfare');
+        playSound('harvest');
         
         scheduleNext(() => processFieldPhase(), 500);
     };
@@ -683,7 +683,7 @@ export const useGameLogic = () => {
             }
             if (harvested > 0) {
                 addLog(`${p.name} harvested crops from ${harvested} fields`, p.color);
-                if (p.type === 'human') playSound('harvest');
+                //if (p.type === 'human') playSound('harvest');
             }
             return newP;
         });
