@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Player, Allocation, MajorCard, ResourceType } from '../types';
 import FarmTile from './FarmTile';
@@ -86,6 +85,10 @@ const PlayerPanel: React.FC<Props> = ({
       return rate;
   };
 
+  // Food Requirement Calculation
+  const foodRequired = (player.res.maxWorkers - player.newbornCount) * 2 + player.newbornCount * 1;
+  const foodStatusColor = player.res.food >= foodRequired ? 'text-green-400' : 'text-red-400';
+
   return (
     <div 
       className={`
@@ -96,12 +99,24 @@ const PlayerPanel: React.FC<Props> = ({
     >
       {/* HEADER */}
       <div className="flex justify-between items-center mb-2 pb-1 border-b border-white/10">
-        <div className="font-bold text-lg flex items-center" style={{ color: player.color }}>
-          {player.name}
-          {isNextStart && <span className="ml-2 text-sm" title="Starting Player">🚩</span>}
-          <span className="ml-2 text-xs text-gray-400 font-normal">
-            ({player.res.workers}/{player.res.maxWorkers} 👷)
-          </span>
+        <div className="flex items-center flex-wrap gap-y-1" style={{ color: player.color }}>
+          <span className="font-bold text-lg mr-2">{player.name}</span>
+          {isNextStart && <span className="mr-2 text-sm" title="Starting Player">🚩</span>}
+          
+          <div className="flex gap-1.5 items-center">
+              {/* Worker Count */}
+              <span className="text-xs text-gray-300 font-normal bg-black/30 px-2 py-0.5 rounded border border-white/10 flex items-center">
+                {player.res.workers}/{player.res.maxWorkers} 👷
+              </span>
+              
+              {/* Food Status */}
+              <span className="text-xs text-gray-300 font-normal bg-black/30 px-2 py-0.5 rounded border border-white/10 flex items-center gap-1" title="Current Food / Food Needed for Harvest">
+                <span>🥣</span>
+                <span className={`font-bold ${foodStatusColor}`}>{player.res.food}</span>
+                <span className="text-gray-500 text-[10px]">/</span>
+                <span className="text-gray-400">{foodRequired}</span>
+              </span>
+          </div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -122,7 +137,7 @@ const PlayerPanel: React.FC<Props> = ({
                 🍲 Convert
             </button>
 
-            <div className="text-yellow-400 font-bold text-sm bg-black/20 px-2 py-0.5 rounded">
+            <div className="text-yellow-400 font-bold text-sm bg-black/20 px-2 py-0.5 rounded border border-yellow-500/30">
                 🌟 {score}
             </div>
         </div>
@@ -178,14 +193,13 @@ const PlayerPanel: React.FC<Props> = ({
           </div>
       )}
 
-      {/* RESOURCES */}
+      {/* RESOURCES (Food Removed) */}
       <div className="flex flex-wrap gap-1 mb-1 text-sm">
         {resIcon('🪵', player.res.wood, 'bg-[#a1887f]')}
         {resIcon('🧱', player.res.clay, 'bg-[#ef9a9a]')}
         {resIcon('🎋', player.res.reed, 'bg-[#eeeeee]')}
         {resIcon('🪨', player.res.stone, 'bg-[#bdbdbd]')}
         <span className="text-gray-500 mx-1">|</span>
-        {resIcon('🥣', player.res.food, 'bg-[#ffcc80]')}
         {resIcon('🌾', player.res.grain, 'bg-[#fff176]')}
         {resIcon('🥕', player.res.veg, 'bg-[#ffab91]')}
       </div>
