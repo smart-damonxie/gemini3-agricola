@@ -1,7 +1,8 @@
 
+
 import React, { useMemo } from 'react';
 import { Player } from '../types';
-import { analyzeFarmLayout, getTierScore } from '../utils/gameLogic';
+import { analyzeFarmLayout, getTierScore, calculateScore } from '../utils/gameLogic';
 
 interface Props {
     players: Player[];
@@ -125,8 +126,23 @@ const GameOverModal: React.FC<Props> = ({ players, onRestart }) => {
                 }
             });
 
-            b.total = b.fields + b.pastures + b.grain + b.veg + b.sheep + b.boar + b.cow + 
+            // Use the comprehensive score function for total accuracy including Braggart/Steward
+            // We pass ALL players here
+            b.total = calculateScore(p, players);
+            
+            // Adjust cardsBase/bonus display purely for breakdown visual (might not sum perfectly if new logic added to total, but close enough)
+            // Actually, calculateScore returns the single number. 
+            // The breakdown struct calculates components manually.
+            // Any discrepancy (like Braggart points) needs to be added to cardsBase or cardsBonus visually if we want match.
+            // Let's check extra points from calculateScore vs breakdown sum.
+            const breakdownSum = b.fields + b.pastures + b.grain + b.veg + b.sheep + b.boar + b.cow + 
                       b.unused + b.stables + b.rooms + b.family + b.begging + b.cardsBase + b.cardsBonus;
+            
+            if (b.total !== breakdownSum) {
+                const diff = b.total - breakdownSum;
+                b.cardsBonus += diff;
+                if (diff > 0) b.bonusDetails.push({ name: 'Special Cards', points: diff, desc: '(Steward/Braggart/etc)' });
+            }
 
             return { player: p, breakdown: b };
         }).sort((a,b) => b.breakdown.total - a.breakdown.total);

@@ -32,10 +32,16 @@ export const DB_MAJORS: Card[] = [
 ];
 
 export const DB_OCCUPATIONS: Card[] = [
-    { id: 'o1', name: '家庭教师 (Tutor)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '每当此时打出"聚会"拿起始时，额外获得1食物', effect: { type: 'passive_action', trigger: 'meeting', bonus: 'food', amount: 1 } },
-    { id: 'o2', name: '伐木工 (Woodcutter)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '每当你拿"木头"时，额外获得1木头', effect: { type: 'passive_res', trigger: 'wood', amount: 1 } },
-    { id: 'o3', name: '石匠 (Mason)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '每当你拿"石头"时，额外获得1石头', effect: { type: 'passive_res', trigger: 'stone', amount: 1 } },
-    { id: 'o4', name: '有机农夫 (Organic)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '游戏结束时，每有一种动物(羊/猪/牛)得1分', effect: { type: 'end_game' } },
+    { id: 'o_caiguren', name: '采菇人', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿木头积累格后: 可选择将1木变2食(放回木头)' },
+    { id: 'o_cangkukanshouyuan', name: '仓库看守员', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿资源市场: 可额外选择+1砖或+1麦' },
+    { id: 'o_chaihuoshiqugong', name: '柴火拾取工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '犁/播/麦: +1木' },
+    { id: 'o_chuiniudawang', name: '吹牛大王', type: 'occupation', cost: { food: 1 }, score: 0, desc: '终局: 5/6/7/8/9/10张卡 -> 2/3/4/5/7/9分', effect: { type: 'end_game' } },
+    { id: 'o_daoshi', name: '导师', type: 'occupation', cost: { food: 1 }, score: 0, desc: '打出后: 每张后续职业+1分', effect: { type: 'end_game' } },
+    { id: 'o_diannong', name: '佃农', type: 'occupation', cost: { food: 1 }, score: 0, desc: '临时工: 可建房/翻修 (模拟: +1木+1砖)' },
+    { id: 'o_dizhixuejia', name: '地质学家', type: 'occupation', cost: { food: 1 }, score: 0, desc: '森林3/芦苇/粘土坑: +1砖' },
+    { id: 'o_dongwujiaoyiyuan', name: '动物交易员', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿羊/猪/牛积累: 1食买1只' },
+    { id: 'o_famugong', name: '伐木工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿木头积累: +1木', effect: { type: 'passive_res', trigger: 'wood', amount: 1 } },
+    { id: 'o_fangwuguanjia', name: '房屋管家', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时: 剩轮数送木. 终局: 最多房3分', effect: { type: 'immediate' } },
 ];
 
 export const DB_MINORS: Card[] = [

@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -30,7 +29,7 @@ const App: React.FC = () => {
     setSubAction,
     selectMajor,
     renovate,
-    viewingCard,
+    viewingCardState, // Updated export
     openCardDetail,
     closeCardDetail,
     adjustHarvest,
@@ -56,6 +55,7 @@ const App: React.FC = () => {
     passCardPlay,      // New name
     toggleHandView,    // New
     isViewingHand,     // New
+    resolveCardChoice, // New
     debug,
     // Audio props from useGameLogic
     playSound,
@@ -75,10 +75,10 @@ const App: React.FC = () => {
     }
   }, [logs]);
 
-  // Auto-open Major Gallery when selecting a major action
+  // Auto-open Major Gallery when selecting a major action IF no minor is being selected
   let activePlayer = players[(gameState.startPlayer + gameState.turnIdx) % 4];
   useEffect(() => {
-      if (activePlayer?.type === 'human' && activePlayer.tempMode && !activePlayer.tempMode.selectedMajorId) {
+      if (activePlayer?.type === 'human' && activePlayer.tempMode && !activePlayer.tempMode.selectedMajorId && !activePlayer.tempMode.selectedCardId) {
           const mode = activePlayer.tempMode.mode;
           if (mode === 'major' || mode === 'reno_major') {
               setShowMajorGallery(true);
@@ -181,9 +181,16 @@ const App: React.FC = () => {
       const mode = activePlayer.tempMode.mode;
       
       // Filter base hand
-      const cards = activePlayer.hand.filter(c => 
-          mode === 'play_occupation' ? c.type === 'occupation' : c.type === 'minor'
-      );
+      let cards = activePlayer.hand;
+
+      if (mode === 'play_occupation') {
+          cards = activePlayer.hand.filter(c => c.type === 'occupation');
+      } else if (mode === 'play_minor_optional') {
+          cards = activePlayer.hand.filter(c => c.type === 'minor');
+      } else if (mode === 'major' || mode === 'reno_major') {
+          // Can play Minors on Major spots
+          cards = activePlayer.hand.filter(c => c.type === 'minor');
+      }
 
       // Apply cost override for display
       return cards.map(c => {
@@ -211,13 +218,37 @@ const App: React.FC = () => {
       handModalTitle = `Play an Occupation (Cost: ${cost} Food)`;
   } else if (activePlayer.tempMode?.mode === 'play_minor_optional') {
       handModalTitle = "Play a Minor Improvement";
+  } else if (activePlayer.tempMode?.mode === 'major' || activePlayer.tempMode?.mode === 'reno_major') {
+      handModalTitle = "Select a Minor Improvement to Play";
   }
 
   // Determine if hand modal should be shown
-  const showHandModal = (activePlayer.type === 'human' && 
-                        activePlayer.tempMode && 
-                        (activePlayer.tempMode.mode === 'play_occupation' || activePlayer.tempMode.mode === 'play_minor_optional') &&
-                        activePlayer.tempMode.selectedCardId === undefined) || isViewingHand;
+  const [showMinorSelection, setShowMinorSelection] = useState(false);
+
+  // Close Minor selection if mode changes or card selected
+  useEffect(() => {
+      if (activePlayer.tempMode?.selectedCardId) setShowMinorSelection(false);
+  }, [activePlayer.tempMode?.selectedCardId]);
+
+  const showHandModal = (
+      isViewingHand || 
+      showMinorSelection ||
+      (activePlayer.type === 'human' && activePlayer.tempMode && 
+       (activePlayer.tempMode.mode === 'play_occupation' || activePlayer.tempMode.mode === 'play_minor_optional') && 
+       activePlayer.tempMode.selectedCardId === undefined)
+  );
+  
+  const closeHandModal = () => {
+      if (isViewingHand) toggleHandView();
+      else if (showMinorSelection) setShowMinorSelection(false);
+      else passCardPlay();
+  };
+
+  const cancelHandModal = () => {
+      if (isViewingHand) toggleHandView();
+      else if (showMinorSelection) setShowMinorSelection(false);
+      else cancelMode();
+  };
 
   // Helper for stats
   const getStatDisplay = (tracker?: {[key: string]: number}) => {
@@ -242,6 +273,42 @@ const App: React.FC = () => {
           return `${amount} ${icon} ${res.charAt(0).toUpperCase() + res.slice(1)}`;
       }).join(', ');
   }
+
+  // Helper for Dynamic Score in Card Modal
+  const getDynamicScore = (card: Card, owner: Player) => {
+      // Logic mirrors calculateScore in utils but for single card display context
+      if (card.id === 'o_daoshi') { // Mentor
+          // Count occupations played AFTER this card in the owner's playedCards list
+          const myIdx = owner.playedCards.findIndex(c => c.id === card.id);
+          if (myIdx !== -1) {
+              let count = 0;
+              for(let i=myIdx+1; i<owner.playedCards.length; i++) {
+                  if(owner.playedCards[i].type === 'occupation') count++;
+              }
+              return count;
+          }
+      } else if (card.id === 'o_chuiniudawang') { // Braggart
+          const count = owner.majors.length + owner.playedCards.length;
+          if (count >= 10) return 9;
+          if (count >= 9) return 7;
+          if (count >= 8) return 5;
+          if (count >= 7) return 4;
+          if (count >= 6) return 3;
+          if (count >= 5) return 2;
+          return 0; // Less than 5 is 0? The card desc says 5->2.
+      } else if (card.id === 'o_organic_farmer') {
+          let types = 0;
+          if (owner.animals.sheep > 0) types++;
+          if (owner.animals.boar > 0) types++;
+          if (owner.animals.cow > 0) types++;
+          return types;
+      }
+      return card.score;
+  }
+
+  // Card Choice States
+  const isCaigurenChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_caiguren';
+  const isKeeperChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_keeper';
 
   return (
     <div className="min-h-screen bg-stone-900 text-stone-200 font-sans selection:bg-yellow-500/30 overflow-x-hidden">
@@ -271,13 +338,19 @@ const App: React.FC = () => {
                             activePlayer.tempMode.mode === 'simple' ? 'Confirm?' :
                             activePlayer.tempMode.mode === 'play_occupation' ? 'Playing Occupation' :
                             activePlayer.tempMode.mode === 'play_minor_optional' ? 'Start Player' :
+                            activePlayer.tempMode.mode === 'choice_caiguren' ? 'Card Effect' :
+                            activePlayer.tempMode.mode === 'choice_keeper' ? 'Card Effect' :
                             actionDetails?.name || activePlayer.tempMode.mode}
                         </span>
                     </div>
 
                     <div className="flex items-center gap-2">
-                        {/* If in a card selection mode, controls are in modal, except cancel */}
-                        {(activePlayer.tempMode.mode === 'play_occupation' || activePlayer.tempMode.mode === 'play_minor_optional') ? (
+                        {/* Choice Modes */}
+                        {(isCaigurenChoice || isKeeperChoice) ? (
+                            <span className="text-xs text-yellow-400 font-bold animate-pulse">Waiting for decision...</span>
+                        ) : (
+                        /* If in a card selection mode, controls are in modal, except cancel */
+                        (activePlayer.tempMode.mode === 'play_occupation' || activePlayer.tempMode.mode === 'play_minor_optional') ? (
                              activePlayer.tempMode.selectedCardId === undefined ? (
                                 <span className="text-xs text-gray-400 italic">Select a card...</span>
                              ) : (
@@ -448,7 +521,7 @@ const App: React.FC = () => {
                                 )}
 
                                 {(activePlayer.tempMode.mode === 'major' || (activePlayer.tempMode.mode === 'reno_major' && activePlayer.houseType !== 'wood')) && (
-                                    // Major Selection Button / Display
+                                    // Major / Minor Selection Button / Display
                                     <div className="flex items-center gap-2">
                                         {activePlayer.tempMode.selectedMajorId ? (
                                             <div className="flex items-center gap-2 bg-stone-900/80 px-2 py-1 rounded border border-yellow-600">
@@ -462,13 +535,34 @@ const App: React.FC = () => {
                                                     Change
                                                 </button>
                                             </div>
+                                        ) : activePlayer.tempMode.selectedCardId ? (
+                                            <div className="flex items-center gap-2 bg-stone-900/80 px-2 py-1 rounded border border-orange-600">
+                                                <span className="text-[10px] text-orange-400 font-bold">
+                                                    Selected: {activePlayer.hand.find(c => c.id === activePlayer.tempMode!.selectedCardId)?.name || 'Unknown'}
+                                                </span>
+                                                <button 
+                                                    onClick={() => setShowMinorSelection(true)}
+                                                    className="px-2 py-0.5 bg-stone-700 hover:bg-stone-600 text-[9px] rounded text-white"
+                                                >
+                                                    Change
+                                                </button>
+                                            </div>
                                         ) : (
-                                            <button 
-                                                onClick={() => setShowMajorGallery(true)}
-                                                className="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 text-white rounded font-bold text-[10px] animate-pulse border border-yellow-500"
-                                            >
-                                                Select Major
-                                            </button>
+                                            <div className="flex gap-1">
+                                                <button 
+                                                    onClick={() => setShowMajorGallery(true)}
+                                                    className="px-3 py-1 bg-yellow-700 hover:bg-yellow-600 text-white rounded font-bold text-[10px] animate-pulse border border-yellow-500"
+                                                >
+                                                    Select Major
+                                                </button>
+                                                <span className="text-[10px] text-gray-400 self-center">OR</span>
+                                                <button 
+                                                    onClick={() => setShowMinorSelection(true)}
+                                                    className="px-3 py-1 bg-orange-700 hover:bg-orange-600 text-white rounded font-bold text-[10px] border border-orange-500"
+                                                >
+                                                    Select Minor
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
                                 )}
@@ -517,6 +611,7 @@ const App: React.FC = () => {
                                     Confirm
                                 </button>
                             </>
+                        )}
                         )}
                     </div>
                 </div>
@@ -663,7 +758,7 @@ const App: React.FC = () => {
                isNextStart={gameState.nextStartPlayer === p.id}
                onFarmClick={(tileIdx) => handleFarmClick(p.id, tileIdx)}
                onFenceClick={p.id === humanPlayer?.id ? (tileIdx, side) => handleFenceClick(p.id, tileIdx, side) : undefined}
-               onMajorClick={(m) => openCardDetail(m)}
+               onMajorClick={(m, owner) => openCardDetail(m, owner)}
                onConvertClick={() => toggleConversion()}
                onAdjustClick={p.type === 'human' ? toggleAnimalManager : undefined}
                isOverflowing={gameState.turnPhase === 'overflow' && gameState.overflowPlayer === p.id}
@@ -708,29 +803,61 @@ const App: React.FC = () => {
               cards={handCardsToDisplay}
               player={activePlayer}
               onSelect={selectCardForPlay}
-              onClose={isViewingHand ? toggleHandView : passCardPlay} 
-              onCancel={isViewingHand ? toggleHandView : cancelMode}
+              onClose={closeHandModal} 
+              onCancel={cancelHandModal}
               title={handModalTitle}
               readOnly={isViewingHand}
           />
       )}
+      
+      {/* CHOICE MODAL FOR CAIGUREN / KEEPER */}
+      {(isCaigurenChoice || isKeeperChoice) && (
+           <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fadeIn">
+               <div className="bg-stone-900 border-4 border-yellow-600 rounded-xl p-8 max-w-sm w-full flex flex-col items-center gap-6 shadow-2xl relative">
+                   <h2 className="text-2xl font-bold text-yellow-400 text-center">
+                       {isCaigurenChoice ? "Purchaser Effect" : "Storehouse Keeper Bonus"}
+                   </h2>
+                   
+                   <p className="text-stone-300 text-center">
+                       {isCaigurenChoice 
+                            ? "Convert 1 Wood into 2 Food?" 
+                            : "Choose your bonus resource:"}
+                   </p>
+                   
+                   <div className="flex gap-4">
+                       {isCaigurenChoice && (
+                           <>
+                               <button onClick={() => resolveCardChoice('no')} className="px-6 py-2 bg-stone-700 hover:bg-stone-600 text-white rounded font-bold uppercase">No</button>
+                               <button onClick={() => resolveCardChoice('yes')} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold uppercase shadow-lg">Yes (+2 Food)</button>
+                           </>
+                       )}
+                       {isKeeperChoice && (
+                           <>
+                               <button onClick={() => resolveCardChoice('clay')} className="px-6 py-2 bg-orange-700 hover:bg-orange-600 text-white rounded font-bold uppercase shadow-lg border border-orange-500">+1 Clay</button>
+                               <button onClick={() => resolveCardChoice('grain')} className="px-6 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded font-bold uppercase shadow-lg border border-yellow-400">+1 Grain</button>
+                           </>
+                       )}
+                   </div>
+               </div>
+           </div>
+      )}
 
-      {viewingCard && (
+      {viewingCardState && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={closeCardDetail}>
            <div className="bg-stone-900 text-white p-6 rounded-xl max-w-sm w-full border-2 border-stone-600 shadow-2xl relative" onClick={e => e.stopPropagation()}>
                <button onClick={closeCardDetail} className="absolute top-3 right-3 text-stone-400 hover:text-white font-bold text-xl">✕</button>
                
                <div className="flex items-center gap-2 mb-4 border-b border-stone-700 pb-2">
-                   <div className={`w-3 h-8 rounded-sm ${viewingCard.type === 'major' ? 'bg-orange-600' : viewingCard.type === 'occupation' ? 'bg-yellow-500' : 'bg-orange-400'}`}></div>
-                   <h3 className="text-xl font-bold tracking-wide">{viewingCard.name}</h3>
+                   <div className={`w-3 h-8 rounded-sm ${viewingCardState.card.type === 'major' ? 'bg-orange-600' : viewingCardState.card.type === 'occupation' ? 'bg-yellow-500' : 'bg-orange-400'}`}></div>
+                   <h3 className="text-xl font-bold tracking-wide">{viewingCardState.card.name}</h3>
                </div>
                
                {/* Card Image Placeholder */}
                <div className="mb-4 rounded-lg overflow-hidden border border-stone-700 bg-black/40 h-40 flex items-center justify-center shadow-inner">
                     {/* In a real app, img source would be dynamic. Using text fallback for now. */}
                     <img 
-                        src={`/assets/majors/${viewingCard.id}.png`} 
-                        alt={viewingCard.name}
+                        src={`/assets/majors/${viewingCardState.card.id}.png`} 
+                        alt={viewingCardState.card.name}
                         className="w-full h-full object-cover"
                         onError={(e) => {
                             e.currentTarget.style.display = 'none';
@@ -739,7 +866,7 @@ const App: React.FC = () => {
                    />
                    <div className="fallback hidden flex flex-col items-center">
                        <span className="text-4xl opacity-20 mb-2">📜</span>
-                       <span className="text-stone-500 text-xs uppercase font-bold tracking-widest">{viewingCard.type}</span>
+                       <span className="text-stone-500 text-xs uppercase font-bold tracking-widest">{viewingCardState.card.type}</span>
                    </div>
                </div>
 
@@ -747,17 +874,19 @@ const App: React.FC = () => {
                    <div className="flex justify-between items-center bg-stone-800 p-2 rounded">
                        <span className="text-stone-400 uppercase text-xs font-bold">Cost</span>
                        <span className="font-mono text-yellow-200">
-                           {Object.entries(viewingCard.cost).length > 0 ? Object.entries(viewingCard.cost).map(([k,v]) => `${v} ${k}`).join(', ') : 'Free'}
+                           {Object.entries(viewingCardState.card.cost).length > 0 ? Object.entries(viewingCardState.card.cost).map(([k,v]) => `${v} ${k}`).join(', ') : 'Free'}
                        </span>
                    </div>
                    
                    <div className="flex justify-between items-center bg-stone-800 p-2 rounded">
                        <span className="text-stone-400 uppercase text-xs font-bold">Victory Points</span>
-                       <span className="font-bold text-yellow-400">🌟 {viewingCard.score}</span>
+                       <span className="font-bold text-yellow-400">
+                           🌟 {getDynamicScore(viewingCardState.card, viewingCardState.owner)}
+                       </span>
                    </div>
 
                    <div className="bg-stone-800 p-3 rounded border border-stone-700 min-h-[60px]">
-                       <p className="italic text-stone-300 leading-relaxed">{viewingCard.desc}</p>
+                       <p className="italic text-stone-300 leading-relaxed">{viewingCardState.card.desc}</p>
                    </div>
                    
                    {/* STAT TRACKER */}
@@ -765,13 +894,13 @@ const App: React.FC = () => {
                        <div className="flex justify-between items-center">
                            <span className="text-xs uppercase font-bold text-green-500 tracking-wider">Cumulative Gains</span>
                            <span className="text-sm font-bold text-white bg-green-900/30 px-3 py-1 rounded border border-green-700/50 min-w-[3rem] text-right">
-                               {getStatDisplay(viewingCard.statTracker)}
+                               {getStatDisplay(viewingCardState.card.statTracker)}
                            </span>
                        </div>
                        <p className="text-[10px] text-stone-500 mt-1 text-right">Includes immediate & passive resources gained</p>
                    </div>
 
-                   {viewingCard.type === 'major' && viewingCard.cook && <p className="text-xs text-orange-400 mt-2 flex items-center gap-1">🔥 Allows cooking animals</p>}
+                   {viewingCardState.card.type === 'major' && viewingCardState.card.cook && <p className="text-xs text-orange-400 mt-2 flex items-center gap-1">🔥 Allows cooking animals</p>}
                </div>
            </div>
         </div>

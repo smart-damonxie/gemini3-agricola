@@ -1,4 +1,5 @@
 
+
 import { Allocation, FarmLayout, Player, ResourceType } from "../types";
 import { SCORING_TIERS } from "../constants";
 
@@ -60,7 +61,7 @@ export const analyzeFarmLayout = (p: Player): FarmLayout => {
     return { pastures, singles };
 };
 
-export const calculateScore = (p: Player): number => {
+export const calculateScore = (p: Player, allPlayers?: Player[]): number => {
     let s = 0;
     const layout = analyzeFarmLayout(p);
 
@@ -112,17 +113,50 @@ export const calculateScore = (p: Player): number => {
     p.majors.forEach(m => s += m.score);
     
     // Played Cards Scores (Occupations / Minors)
+    // Note: Some cards like Braggart are scored via effect type below or logic here
     p.playedCards.forEach(c => s += c.score);
 
     // End Game Effects
-    p.playedCards.forEach(c => {
+    p.playedCards.forEach((c, idx) => {
         if (c.effect?.type === 'end_game') {
-            if (c.id === 'o4') { // Organic Farmer
+            if (c.id === 'o4' || c.name.includes('Organic')) { // Organic Farmer
                 let types = 0;
                 if (p.animals.sheep > 0) types++;
                 if (p.animals.boar > 0) types++;
                 if (p.animals.cow > 0) types++;
                 s += types;
+            } else if (c.id === 'o_chuiniudawang') { // Braggart
+                const count = p.majors.length + p.playedCards.length;
+                if (count >= 10) s += 9;
+                else if (count >= 9) s += 7;
+                else if (count >= 8) s += 5;
+                else if (count >= 7) s += 4;
+                else if (count >= 6) s += 3;
+                else if (count >= 5) s += 2;
+            } else if (c.id === 'o_daoshi') { // Mentor
+                // Count occupations played AFTER this card
+                // We rely on array order in playedCards
+                let count = 0;
+                // Assuming c is the card object reference in the array
+                // We find its index
+                const myIdx = p.playedCards.findIndex(card => card.id === c.id); // Potential issue if duplicates allowed? Assuming unique IDs.
+                if (myIdx !== -1) {
+                    for(let i=myIdx+1; i<p.playedCards.length; i++) {
+                        if(p.playedCards[i].type === 'occupation') count++;
+                    }
+                }
+                s += count;
+            } else if (c.id === 'o_fangwuguanjia' && allPlayers) { // House Steward (End game part)
+                // "End game: Player with most rooms gets 3 VP"
+                const myRooms = p.farm.filter(x => x === 1).length;
+                let maxRooms = 0;
+                allPlayers.forEach(op => {
+                    const r = op.farm.filter(x => x === 1).length;
+                    if (r > maxRooms) maxRooms = r;
+                });
+                if (myRooms > 0 && myRooms === maxRooms) {
+                    s += 3;
+                }
             }
         }
     });

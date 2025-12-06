@@ -1,4 +1,3 @@
-
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType, Card } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, DB_OCCUPATIONS, DB_MINORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES, LIMIT_FENCES } from '../constants';
@@ -18,9 +17,9 @@ const createInitialPlayers = (): Player[] => {
     return Array.from({ length: 4 }, (_, i) => {
         // Deal 3 of each
         const hand: Card[] = [];
-        for (let k = 0; k < 3; k++) hand.push(occupations[i * 3 + k % occupations.length]); // Wrap if not enough logic, but we have 4*3=12 needed. Constants has 4.
+        for (let k = 0; k < 3; k++) hand.push(occupations[(i * 3 + k) % occupations.length]); 
+        
         // To prevent crash if DB is small:
-        const myOccs = DB_OCCUPATIONS.length >= 3 ? shuffle([...DB_OCCUPATIONS]).slice(0, 3) : [...DB_OCCUPATIONS];
         const myMinors = DB_MINORS.length >= 3 ? shuffle([...DB_MINORS]).slice(0, 3) : [...DB_MINORS];
         
         return {
@@ -39,7 +38,7 @@ const createInitialPlayers = (): Player[] => {
             stablesCount: 0,
             houseType: 'wood',
             majors: [],
-            hand: [...myOccs, ...myMinors],
+            hand: [...hand, ...myMinors],
             playedCards: [],
             begging: 0,
             tempMode: null,
@@ -81,7 +80,7 @@ export const useGameLogic = () => {
     });
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [floatText, setFloatText] = useState<{ id: number, text: string, x: number, y: number }[]>([]);
-    const [viewingCard, setViewingCard] = useState<Card | null>(null);
+    const [viewingCardState, setViewingCardState] = useState<{ card: Card, owner: Player } | null>(null);
     const [isAdjustingAnimals, setIsAdjustingAnimals] = useState(false);
     const [isViewingHand, setIsViewingHand] = useState(false);
     
@@ -525,14 +524,28 @@ export const useGameLogic = () => {
         // Start modifying player
         let newP = { ...p, res: {...p.res}, animals: {...p.animals}, playedCards: [...p.playedCards] };
         let animalsGained = false;
+        let needsResetAccumulation = false;
 
         if (act.type === 'res') {
             const amt = act.cur || act.amount || 0;
             if (['sheep','boar','cow'].includes(act.res!)) {
                 // @ts-ignore
                 newP.animals[act.res!] += amt;
+                
+                // o_dongwujiaoyiyuan (Animal Dealer): Buy extra animal for 1 food
+                if (act.acc) {
+                    const trader = newP.playedCards.find(c => c.id === 'o_dongwujiaoyiyuan');
+                    if (trader && newP.res.food >= 1) {
+                         newP.res.food--;
+                         // @ts-ignore
+                         newP.animals[act.res!] += 1;
+                         newP.playedCards = newP.playedCards.map(c => c.id === trader.id ? updateCardStat(c, act.res!, 1) : c);
+                         addLog(`${p.name} bought extra ${act.res} (Animal Dealer)`, p.color);
+                    }
+                }
+
                 animalsGained = true;
-                resetActionAccumulation(act.id);
+                needsResetAccumulation = true;
             } else {
                 // @ts-ignore
                 newP.res[act.res!] += amt;
@@ -543,7 +556,6 @@ export const useGameLogic = () => {
                          const bonus = c.effect.amount || 1;
                          // @ts-ignore
                          newP.res[act.res!] += bonus;
-                         
                          // AI Stat Tracking
                          return updateCardStat(c, act.res!, bonus);
                     }
@@ -555,13 +567,46 @@ export const useGameLogic = () => {
                     }
                     return c;
                 });
+                
+                // SPECIFIC CARD LOGIC 
+                // o_caiguren (Purchaser) - Auto for AI
+                if (p.type === 'ai' && act.res === 'wood' && act.acc && newP.res.wood >= 1) {
+                    const caiguren = newP.playedCards.find(c => c.id === 'o_caiguren');
+                    if (caiguren) {
+                        newP.res.wood -= 1;
+                        newP.res.food += 2;
+                        newP.playedCards = newP.playedCards.map(c => c.id === caiguren.id ? updateCardStat(c, 'food', 2) : c);
+                        addLog(`${p.name} used Purchaser: -1 Wood, +2 Food`, p.color);
+                    }
+                }
+                
+                // o_dizhixuejia (Geologist)
+                if (['act_forest_3', 'act_reed1', 'act_clay_pit'].includes(act.id)) {
+                     const geo = newP.playedCards.find(c => c.id === 'o_dizhixuejia');
+                     if (geo) {
+                         newP.res.clay += 1;
+                         newP.playedCards = newP.playedCards.map(c => c.id === geo.id ? updateCardStat(c, 'clay', 1) : c);
+                         addLog(`${p.name} found 1 Clay (Geologist)`, p.color);
+                     }
+                }
 
-                resetActionAccumulation(act.id);
+                needsResetAccumulation = true;
             }
             addLog(`${p.name} took ${act.name}`, p.color);
         } else if (act.type === 'res_combo') {
             if (act.id === 'act_market') {
                 newP.res.reed += 1; newP.res.stone += 1; newP.res.food += 1;
+                
+                // o_cangkukanshouyuan (Storehouse Keeper) - Auto Clay for AI
+                if (p.type === 'ai') {
+                    const keeper = newP.playedCards.find(c => c.id === 'o_cangkukanshouyuan');
+                    if (keeper) {
+                        newP.res.clay += 1;
+                        newP.playedCards = newP.playedCards.map(c => c.id === keeper.id ? updateCardStat(c, 'clay', 1) : c);
+                        addLog(`${p.name} got +1 Clay (Storehouse Keeper)`, p.color);
+                    }
+                }
+
                 addLog(`${p.name} took Resource Market`, p.color);
             }
         } else if (act.mode === 'meeting') {
@@ -599,11 +644,26 @@ export const useGameLogic = () => {
                  newP.hand = newP.hand.filter(c => c.id !== card.id);
                  
                  // Apply Immediate
-                 if (card.effect?.type === 'immediate' && card.effect.bonus) {
-                     const amt = card.effect.amount || 1;
-                     // @ts-ignore
-                     newP.res[card.effect.bonus] += amt;
-                     card = updateCardStat(card, card.effect.bonus, amt);
+                 if (card.effect?.type === 'immediate') {
+                    if (card.effect.bonus) {
+                        const amt = card.effect.amount || 1;
+                        // @ts-ignore
+                        newP.res[card.effect.bonus] += amt;
+                        card = updateCardStat(card, card.effect.bonus, amt);
+                    }
+                     // House Steward (Immediate Wood based on rounds)
+                     if (card.id === 'o_fangwuguanjia') {
+                         const roundsLeft = MAX_ROUNDS - stateRef.current.gameState.round;
+                         let wood = 0;
+                         if (roundsLeft >= 9) wood = 4;
+                         else if (roundsLeft >= 6) wood = 3;
+                         else if (roundsLeft >= 3) wood = 2; 
+                         else if (roundsLeft >= 1) wood = 1;
+                         
+                         newP.res.wood += wood;
+                         card = updateCardStat(card, 'wood', wood);
+                         addLog(`${p.name} got ${wood} wood (Steward)`, p.color);
+                     }
                  }
                  
                  newP.playedCards = [...newP.playedCards, card];
@@ -612,6 +672,27 @@ export const useGameLogic = () => {
                  addLog(`${p.name} learnt nothing (no affordable occupation)`, p.color);
              }
         } else {
+             // FARM ACTIONS (Plow, Sow, etc.) - Trigger Firewood Collector
+             if (['act_plow', 'act_grain', 'r_sow', 'r_plow_sow'].includes(act.id) || act.mode === 'plow' || act.mode === 'sow') {
+                 const collector = newP.playedCards.find(c => c.id === 'o_chaihuoshiqugong');
+                 if (collector) {
+                     newP.res.wood += 1;
+                     newP.playedCards = newP.playedCards.map(c => c.id === collector.id ? updateCardStat(c, 'wood', 1) : c);
+                 }
+             }
+
+             // o_diannong (Tenant Farmer) - Day Laborer Bonus
+             if (act.id === 'act_labor') {
+                 const tenant = newP.playedCards.find(c => c.id === 'o_diannong');
+                 if (tenant) {
+                     // Simulate building aid by giving resources
+                     newP.res.wood += 1;
+                     newP.res.clay += 1;
+                     newP.playedCards = newP.playedCards.map(c => c.id === tenant.id ? updateCardStat(updateCardStat(c, 'wood', 1), 'clay', 1) : c);
+                     addLog(`${p.name} got +1 Wood/Clay (Tenant Farmer)`, p.color);
+                 }
+             }
+
             addLog(`${p.name} took ${act.name} (Simplified)`, p.color);
         }
 
@@ -620,6 +701,25 @@ export const useGameLogic = () => {
         const newOccupied = { ...stateRef.current.gameState.occupied, [act.id]: p.id };
         updateGameState(prev => ({ ...prev, occupied: newOccupied }));
         updatePlayer(p.id, () => newP);
+
+        if (needsResetAccumulation) {
+            // Check for Caiguren override before resetting for AI
+            // For AI we did it automatically above if eligible
+            
+            // Standard reset
+            resetActionAccumulation(act.id);
+            
+            // If Caiguren active and used (AI), put 1 wood back
+            if (p.type === 'ai' && act.res === 'wood' && act.acc) {
+                 if (p.playedCards.some(c => c.id === 'o_caiguren') && p.res.wood >= 1) {
+                      updateGameState(prev => ({
+                           ...prev,
+                           baseActions: prev.baseActions.map(a => a.id === act.id ? { ...a, cur: 1 } : a),
+                           roundCards: prev.roundCards.map(a => a.id === act.id ? { ...a, cur: 1 } : a)
+                      }));
+                 }
+            }
+        }
 
         if (p.type === 'human' && animalsGained) {
             const alloc = calculateAllocation(newP);
@@ -740,10 +840,14 @@ export const useGameLogic = () => {
         const p = stateRef.current.players[overflowPlayer];
         
         let bestRate = 0;
+        let bestCooker: Card | null = null;
         // Check Majors AND Played Cards
         [...p.majors, ...p.playedCards].forEach(m => {
             if (m.cook && m.cook[type]) {
-                if (m.cook[type] > bestRate) bestRate = m.cook[type];
+                if (m.cook[type] > bestRate) {
+                    bestRate = m.cook[type];
+                    bestCooker = m;
+                }
             }
         });
 
@@ -762,11 +866,23 @@ export const useGameLogic = () => {
 
         updatePlayer(overflowPlayer, pp => {
              const newP = { ...pp, animals: { ...pp.animals }, res: { ...pp.res } };
+             let updatedMajors = [...newP.majors];
+             let updatedPlayed = [...newP.playedCards];
+
              if (newP.animals[type] > 0) {
                  newP.animals[type]--;
                  newP.res.food += bestRate;
+
+                 // Update Stats on the cooker
+                 if (bestCooker) {
+                     if (bestCooker.type === 'major') {
+                         updatedMajors = updatedMajors.map(m => m.id === bestCooker!.id ? updateCardStat(m, 'food', bestRate) : m);
+                     } else {
+                         updatedPlayed = updatedPlayed.map(c => c.id === bestCooker!.id ? updateCardStat(c, 'food', bestRate) : c);
+                     }
+                 }
              }
-             return newP;
+             return { ...newP, majors: updatedMajors, playedCards: updatedPlayed };
         });
         addLog(`${p.name} cooked overflow ${type} for ${bestRate} food`, p.color);
         playSound('cook');
@@ -786,10 +902,14 @@ export const useGameLogic = () => {
         const p = stateRef.current.players[pIdx];
 
         let bestRate = 0;
+        let bestCooker: Card | null = null;
         // Check Majors AND Played Cards
         [...p.majors, ...p.playedCards].forEach(m => {
             if (m.cook && m.cook[type]) {
-                if (m.cook[type] > bestRate) bestRate = m.cook[type];
+                if (m.cook[type] > bestRate) {
+                    bestRate = m.cook[type];
+                    bestCooker = m;
+                }
             }
         });
 
@@ -806,12 +926,27 @@ export const useGameLogic = () => {
              return;
         }
 
-        updatePlayer(pIdx, pp => ({
-            ...pp,
-            animals: { ...pp.animals, [type]: pp.animals[type] - 1 },
-            res: { ...pp.res, food: pp.res.food + bestRate },
-            assignedAnimals: assignments 
-        }));
+        updatePlayer(pIdx, pp => {
+            // Update Stats
+            let updatedMajors = [...pp.majors];
+            let updatedPlayed = [...pp.playedCards];
+            if (bestCooker) {
+                if (bestCooker.type === 'major') {
+                     updatedMajors = updatedMajors.map(m => m.id === bestCooker!.id ? updateCardStat(m, 'food', bestRate) : m);
+                } else {
+                     updatedPlayed = updatedPlayed.map(c => c.id === bestCooker!.id ? updateCardStat(c, 'food', bestRate) : c);
+                }
+            }
+
+            return {
+                ...pp,
+                animals: { ...pp.animals, [type]: pp.animals[type] - 1 },
+                res: { ...pp.res, food: pp.res.food + bestRate },
+                assignedAnimals: assignments,
+                majors: updatedMajors,
+                playedCards: updatedPlayed
+            };
+        });
         addLog(`${p.name} cooked ${type} for ${bestRate} food`, p.color);
         playSound('cook');
     };
@@ -1192,45 +1327,91 @@ export const useGameLogic = () => {
         let gain = t.grain; 
         gain += (t.vegRaw || 0);
 
+        // Track stats logic needs to know WHICH card did the conversion
+        // Simplify: Find best card and attribute stats to it.
         let maxVegCookRate = 0;
-        // Check Majors AND Played Cards
+        let bestVegCooker: Card | null = null;
         [...p.majors, ...p.playedCards].forEach(m => {
-            if (m.cook && m.cook.veg > maxVegCookRate) maxVegCookRate = m.cook.veg;
-        });
-        if (t.vegCook && t.vegCook > 0) {
-            gain += t.vegCook * (maxVegCookRate > 0 ? maxVegCookRate : 1);
-        }
-        
-        let maxSheepRate = 0; let maxBoarRate = 0; let maxCowRate = 0;
-        [...p.majors, ...p.playedCards].forEach(m => {
-            if (m.cook) {
-                if (m.cook.sheep > maxSheepRate) maxSheepRate = m.cook.sheep;
-                if (m.cook.boar > maxBoarRate) maxBoarRate = m.cook.boar;
-                if (m.cook.cow > maxCowRate) maxCowRate = m.cook.cow;
+            if (m.cook && m.cook.veg > maxVegCookRate) {
+                maxVegCookRate = m.cook.veg;
+                bestVegCooker = m;
             }
         });
 
-        gain += t.sheep * maxSheepRate;
-        gain += t.boar * maxBoarRate;
-        gain += t.cow * maxCowRate;
+        if (t.vegCook && t.vegCook > 0) {
+            const vegFood = t.vegCook * (maxVegCookRate > 0 ? maxVegCookRate : 1);
+            gain += vegFood;
+            // Update Stats
+            if (bestVegCooker) {
+                 updateCardStat(bestVegCooker, 'food', vegFood);
+            }
+        }
+        
+        let maxSheepRate = 0; let bestSheepCooker: Card|null = null;
+        let maxBoarRate = 0; let bestBoarCooker: Card|null = null;
+        let maxCowRate = 0; let bestCowCooker: Card|null = null;
+
+        [...p.majors, ...p.playedCards].forEach(m => {
+            if (m.cook) {
+                if (m.cook.sheep > maxSheepRate) { maxSheepRate = m.cook.sheep; bestSheepCooker = m; }
+                if (m.cook.boar > maxBoarRate) { maxBoarRate = m.cook.boar; bestBoarCooker = m; }
+                if (m.cook.cow > maxCowRate) { maxCowRate = m.cook.cow; bestCowCooker = m; }
+            }
+        });
+
+        if (t.sheep > 0) {
+            const food = t.sheep * maxSheepRate;
+            gain += food;
+            if (bestSheepCooker) updateCardStat(bestSheepCooker, 'food', food);
+        }
+        if (t.boar > 0) {
+            const food = t.boar * maxBoarRate;
+            gain += food;
+            if (bestBoarCooker) updateCardStat(bestBoarCooker, 'food', food);
+        }
+        if (t.cow > 0) {
+            const food = t.cow * maxCowRate;
+            gain += food;
+            if (bestCowCooker) updateCardStat(bestCowCooker, 'food', food);
+        }
 
         // Workshop conversions
         const newP = { ...p, res: { ...p.res }, animals: { ...p.animals }, conversionTemp: null, workshopsUsed: { ...p.workshopsUsed } };
+        let updatedMajors = [...newP.majors];
+        let updatedPlayed = [...newP.playedCards];
+        
+        // Helper to update stats in lists
+        const applyStat = (id: string, amt: number) => {
+             updatedMajors = updatedMajors.map(m => m.id === id ? updateCardStat(m, 'food', amt) : m);
+             updatedPlayed = updatedPlayed.map(c => c.id === id ? updateCardStat(c, 'food', amt) : c);
+        };
 
         const basket = p.majors.find(m => m.id === 'm6');
         if (basket && basket.convert && basket.convert.food) {
-             gain += t.reed * basket.convert.food;
-             if (t.reed > 0) newP.workshopsUsed.reed = true;
+             const food = t.reed * basket.convert.food;
+             gain += food;
+             if (t.reed > 0) {
+                 newP.workshopsUsed.reed = true;
+                 applyStat('m6', food);
+             }
         }
         const joinery = p.majors.find(m => m.id === 'm7');
         if (joinery && joinery.convert && joinery.convert.food) {
-             gain += t.wood * joinery.convert.food;
-             if (t.wood > 0) newP.workshopsUsed.wood = true;
+             const food = t.wood * joinery.convert.food;
+             gain += food;
+             if (t.wood > 0) {
+                 newP.workshopsUsed.wood = true;
+                 applyStat('m7', food);
+             }
         }
         const pottery = p.majors.find(m => m.id === 'm8');
         if (pottery && pottery.convert && pottery.convert.food) {
-             gain += t.clay * pottery.convert.food;
-             if (t.clay > 0) newP.workshopsUsed.clay = true;
+             const food = t.clay * pottery.convert.food;
+             gain += food;
+             if (t.clay > 0) {
+                 newP.workshopsUsed.clay = true;
+                 applyStat('m8', food);
+             }
         }
 
         newP.res.grain -= t.grain; 
@@ -1243,6 +1424,9 @@ export const useGameLogic = () => {
         newP.res.clay -= t.clay;
         newP.animals.sheep -= t.sheep; newP.animals.boar -= t.boar; newP.animals.cow -= t.cow; 
         newP.res.food += gain;
+        
+        newP.majors = updatedMajors;
+        newP.playedCards = updatedPlayed;
         
         addLog(`${p.name} converted resources to +${gain} Food`, p.color);
         updatePlayer(pIdx, () => newP);
@@ -1299,14 +1483,14 @@ export const useGameLogic = () => {
     const selectCardForPlay = (cardId: string) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         const pIdx = (startPlayer + turnIdx) % 4;
-        const p = stateRef.current.players[pIdx];
         
         // Don't commit yet, just update state to show "Confirm" UI on main screen
         updatePlayer(pIdx, pp => ({
             ...pp,
             tempMode: { 
                 ...pp.tempMode!, 
-                selectedCardId: cardId 
+                selectedCardId: cardId,
+                selectedMajorId: undefined // Mutually exclusive
             }
         }));
         playSound('click');
@@ -1325,6 +1509,64 @@ export const useGameLogic = () => {
             }
         }));
         playSound('click');
+    }
+
+    // Resolves choice cards for Humans
+    const resolveCardChoice = (choice: string) => {
+        const { startPlayer, turnIdx } = stateRef.current.gameState;
+        const pIdx = (startPlayer + turnIdx) % 4;
+        const p = stateRef.current.players[pIdx];
+        
+        if (!p.tempMode) return;
+
+        let finalP = { ...p };
+        let actId = p.tempMode.actId;
+        
+        // Caiguren Choice
+        if (p.tempMode.mode === 'choice_caiguren') {
+            const caiguren = finalP.playedCards.find(c => c.id === 'o_caiguren');
+            if (choice === 'yes' && caiguren && finalP.res.wood >= 1) {
+                finalP.res.wood -= 1;
+                finalP.res.food += 2;
+                // Add 1 Wood back to the action logic (reset accum to 1)
+                // We handle this by updating the board state separately below
+                
+                // Update stat tracker
+                finalP.playedCards = finalP.playedCards.map(c => c.id === 'o_caiguren' ? updateCardStat(c, 'food', 2) : c);
+                
+                addLog(`${p.name} chose to use Purchaser: -1 Wood, +2 Food`, p.color);
+                
+                // Refill board with 1 wood
+                updateGameState(prev => ({
+                     ...prev,
+                     baseActions: prev.baseActions.map(a => a.id === actId ? { ...a, cur: 1 } : a),
+                     roundCards: prev.roundCards.map(a => a.id === actId ? { ...a, cur: 1 } : a)
+                }));
+            } else {
+                addLog(`${p.name} declined Purchaser`, p.color);
+            }
+        }
+        
+        // Keeper Choice
+        if (p.tempMode.mode === 'choice_keeper') {
+             const keeper = finalP.playedCards.find(c => c.id === 'o_cangkukanshouyuan');
+             if (keeper) {
+                 if (choice === 'clay') {
+                     finalP.res.clay += 1;
+                     finalP.playedCards = finalP.playedCards.map(c => c.id === keeper.id ? updateCardStat(c, 'clay', 1) : c);
+                     addLog(`${p.name} chose +1 Clay (Storehouse Keeper)`, p.color);
+                 } else if (choice === 'grain') {
+                     finalP.res.grain += 1;
+                     finalP.playedCards = finalP.playedCards.map(c => c.id === keeper.id ? updateCardStat(c, 'grain', 1) : c);
+                     addLog(`${p.name} chose +1 Grain (Storehouse Keeper)`, p.color);
+                 }
+             }
+        }
+
+        // Clean up
+        updatePlayer(pIdx, () => ({ ...finalP, tempMode: null }));
+        updateGameState(prev => ({ ...prev, turnIdx: prev.turnIdx + 1 }));
+        scheduleNext(() => nextTurn(), 500);
     }
 
     const cancelMode = () => {
@@ -1346,13 +1588,12 @@ export const useGameLogic = () => {
          const pending = stateRef.current.gameState.pendingAction;
          const { majors, baseActions } = stateRef.current.gameState;
          
-         // --- OCCUPATION / CARD PLAY LOGIC (NEW) ---
+         // --- OCCUPATION / CARD PLAY LOGIC ---
          if (p.tempMode.mode === 'play_occupation' || p.tempMode.mode === 'play_minor_optional') {
              const cardId = p.tempMode.selectedCardId;
              const isMeeting = p.tempMode.mode === 'play_minor_optional';
 
              if (!cardId && !isMeeting) {
-                 // Occupation action MUST pick a card or cancel
                  addLog("Must select a card or cancel.", "red");
                  playSound('error');
                  return;
@@ -1411,6 +1652,19 @@ export const useGameLogic = () => {
                         // Update tracking
                         card = updateCardStat(card, card.effect.bonus, amt);
                     }
+                     // House Steward (Immediate Wood based on rounds)
+                     if (card.id === 'o_fangwuguanjia') {
+                         const roundsLeft = MAX_ROUNDS - stateRef.current.gameState.round;
+                         let wood = 0;
+                         if (roundsLeft >= 9) wood = 4;
+                         else if (roundsLeft >= 6) wood = 3;
+                         else if (roundsLeft >= 3) wood = 2; 
+                         else if (roundsLeft >= 1) wood = 1;
+                         
+                         finalP.res.wood += wood;
+                         card = updateCardStat(card, 'wood', wood);
+                         addLog(`${p.name} got ${wood} wood (Steward)`, p.color);
+                     }
                  }
                  
                  playedCard = card;
@@ -1455,9 +1709,13 @@ export const useGameLogic = () => {
                  let totalGain = 0;
                  let inputsMsg: string[] = [];
 
+                 // We need to update stats on specific cards here
+                 let updatedMajors = [...p.majors];
+                 let updatedPlayed = [...p.playedCards];
+
                  Object.entries(p.tempMode.bakeTargets).forEach(([mId, count]) => {
                      if (count > 0) {
-                         const card = p.majors.find(m => m.id === mId);
+                         const card = p.majors.find(m => m.id === mId) || p.playedCards.find(c => c.id === mId);
                          if (card) {
                              let gain = 0;
                              if (card.specialBake) {
@@ -1468,6 +1726,13 @@ export const useGameLogic = () => {
                              totalCost += count;
                              totalGain += gain;
                              inputsMsg.push(`${card.name}: ${count}g->${gain}f`);
+
+                             // Update stats
+                             if (card.type === 'major') {
+                                 updatedMajors = updatedMajors.map(m => m.id === card.id ? updateCardStat(m, 'food', gain) : m);
+                             } else {
+                                 updatedPlayed = updatedPlayed.map(c => c.id === card.id ? updateCardStat(c, 'food', gain) : c);
+                             }
                          }
                      }
                  });
@@ -1479,7 +1744,13 @@ export const useGameLogic = () => {
                  }
                  
                  if (totalCost > 0) {
-                     const finalP = { ...p, res: { ...p.res, grain: p.res.grain - totalCost, food: p.res.food + totalGain }, tempMode: null };
+                     const finalP = { 
+                         ...p, 
+                         res: { ...p.res, grain: p.res.grain - totalCost, food: p.res.food + totalGain }, 
+                         majors: updatedMajors,
+                         playedCards: updatedPlayed,
+                         tempMode: null 
+                     };
                      addLog(`${p.name} baked: ${inputsMsg.join(', ')}`, p.color);
                      updatePlayer(pId, () => finalP);
                      playSound('cook');
@@ -1501,6 +1772,7 @@ export const useGameLogic = () => {
              const snapP = JSON.parse(pending.snapshot);
              snapP.fences = new Set(snapP.fences);
              
+             // ... Validators (omitted for brevity, same as before) ...
              if (mode === 'plow') {
                  const oldFields = snapP.farm.filter((x: number) => x === 2).length;
                  const newFields = finalP.farm.filter((x: number) => x === 2).length;
@@ -1519,7 +1791,7 @@ export const useGameLogic = () => {
                  if (finalP.fences.size <= snapP.fences.size) { isValid = false; errMsg = "Must build fences!"; }
              }
              else if (mode === 'major') {
-                 if (!p.tempMode.selectedMajorId) { isValid = false; errMsg = "Must select a Major Improvement!"; }
+                 if (!p.tempMode.selectedMajorId && !p.tempMode.selectedCardId) { isValid = false; errMsg = "Must select a Major OR Minor Improvement!"; }
              }
              else if (mode === 'grow' || mode === 'grow_force') {
                  if (finalP.res.maxWorkers <= snapP.res.maxWorkers) { isValid = false; errMsg = "Must grow family!"; }
@@ -1527,6 +1799,7 @@ export const useGameLogic = () => {
              else if (mode === 'reno_major') {
                   const renoDone = finalP.houseType !== snapP.houseType;
                   if (!renoDone) { isValid = false; errMsg = "Must Renovate first!"; }
+                  if (isValid && !p.tempMode.selectedMajorId && !p.tempMode.selectedCardId) { isValid = false; errMsg = "Must select a Major OR Minor Improvement!"; }
              }
              else if (mode === 'reno_fence') {
                   const renoDone = finalP.houseType !== snapP.houseType;
@@ -1542,7 +1815,6 @@ export const useGameLogic = () => {
                  
                  let totalBakeCost = 0;
                  let totalBakeGain = 0;
-                 
                  if (p.tempMode.bakeTargets) {
                      Object.entries(p.tempMode.bakeTargets).forEach(([mId, count]) => {
                          if (count > 0) {
@@ -1560,18 +1832,34 @@ export const useGameLogic = () => {
                          }
                      });
                  }
-                 
                  const bakeDone = totalBakeCost > 0;
                  if (!sowDone && !bakeDone) {
                      isValid = false; errMsg = "Must Sow or Bake!";
                  }
-                 
                  if (isValid && bakeDone) {
                      if (totalBakeCost > finalP.res.grain) {
                          isValid = false; errMsg = "Not enough grain!";
                      } else {
+                         // Update stats for bake choice
+                         let updatedMajors = [...finalP.majors];
+                         if (p.tempMode.bakeTargets) {
+                             Object.entries(p.tempMode.bakeTargets).forEach(([mId, count]) => {
+                                 if(count > 0) {
+                                     const card = finalP.majors.find(m => m.id === mId);
+                                     if(card) {
+                                         let gain = 0;
+                                         if (card.specialBake) gain = (count / card.specialBake.in) * card.specialBake.out;
+                                         else if (card.bakeRate) gain = count * card.bakeRate;
+                                         updatedMajors = updatedMajors.map(m => m.id === mId ? updateCardStat(m, 'food', gain) : m);
+                                     }
+                                 }
+                             });
+                         }
+
                          finalP.res.grain -= totalBakeCost;
                          finalP.res.food += totalBakeGain;
+                         finalP.majors = updatedMajors;
+                         
                          addLog(`${p.name} baked ${totalBakeCost} grain -> ${totalBakeGain} food`, p.color);
                          playSound('cook');
                      }
@@ -1580,7 +1868,53 @@ export const useGameLogic = () => {
 
              if (isValid && (mode === 'major' || mode === 'reno_major')) {
                  const mId = p.tempMode.selectedMajorId;
-                 if (mId) {
+                 const cardId = p.tempMode.selectedCardId;
+
+                 // === CASE 1: MINOR IMPROVEMENT SELECTED ===
+                 if (cardId) {
+                     const card = p.hand.find(c => c.id === cardId);
+                     if (!card) { isValid = false; errMsg = "Card not found"; }
+                     else {
+                         // Check minor cost
+                         let canAfford = true;
+                         Object.entries(card.cost).forEach(([k, v]) => {
+                             // @ts-ignore
+                             if (finalP.res[k] < v) canAfford = false;
+                         });
+                         if (!canAfford) { isValid = false; errMsg = `Cannot afford ${card.name}`; }
+                         else {
+                             // Pay Minor Cost
+                             const newRes = { ...finalP.res };
+                             Object.entries(card.cost).forEach(([k, v]) => {
+                                 // @ts-ignore
+                                 newRes[k] -= v;
+                             });
+                             finalP.res = newRes;
+                             finalP.hand = finalP.hand.filter(c => c.id !== cardId);
+                             
+                             // Immediate Effect
+                             if (card.effect?.type === 'immediate' && card.effect.bonus) {
+                                 const amt = card.effect.amount || 1;
+                                 // @ts-ignore
+                                 finalP.res[card.effect.bonus] = (finalP.res[card.effect.bonus] || 0) + amt;
+                                 finalP.playedCards = [...finalP.playedCards, updateCardStat(card, card.effect.bonus, amt)];
+                             } else {
+                                 finalP.playedCards = [...finalP.playedCards, card];
+                             }
+
+                             addLog(`${p.name} played Minor: ${card.name}`, p.color);
+                             playSound('success');
+
+                             const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
+                             updatePlayer(pId, () => ({ ...finalP, res: { ...finalP.res, workers: finalP.res.workers - 1 }, tempMode: null }));
+                             updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null, turnIdx: prev.turnIdx + 1 }));
+                             scheduleNext(() => nextTurn(), 500);
+                             return;
+                         }
+                     }
+                 } 
+                 // === CASE 2: MAJOR IMPROVEMENT SELECTED ===
+                 else if (mId) {
                      const card = majors.find(m => m.id === mId);
                      if (!card) {
                          isValid = false; errMsg = "Card not found/already taken.";
@@ -1591,18 +1925,15 @@ export const useGameLogic = () => {
                          const isUpgrade = isFireplace && hearth && p.tempMode.subAction === 'upgrade';
 
                          if (isUpgrade) {
-                             // Perform Swap
-                             finalP.majors = finalP.majors.filter(m => m.id !== hearth.id); // Remove Hearth
-                             finalP.majors.push(card); // Add Fireplace
+                             finalP.majors = finalP.majors.filter(m => m.id !== hearth.id); 
+                             finalP.majors.push(card); 
                              addLog(`${p.name} upgraded ${hearth.name} to ${card.name}`, p.color);
                              playSound('build');
 
-                             // Update Game State: Remove Fireplace from pool, Add Hearth to pool
                              const newMajors = majors.filter(m => m.id !== mId);
-                             newMajors.push(hearth); // Return hearth
+                             newMajors.push(hearth); 
                              updateGameState(prev => ({ ...prev, majors: newMajors }));
 
-                             // Trigger Bake Immediate if applicable (Fireplaces allow baking)
                              if (card.type === 'major' && card.bakeRate && finalP.res.grain > 0) {
                                  const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
                                  updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null }));
@@ -1626,7 +1957,6 @@ export const useGameLogic = () => {
                                  }));
                                  return;
                              }
-                             // End turn for upgrade path
                              const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
                              updatePlayer(pId, () => ({ ...finalP, res: { ...finalP.res, workers: finalP.res.workers - 1 }, tempMode: null }));
                              updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null, turnIdx: prev.turnIdx + 1 }));
@@ -1678,38 +2008,24 @@ export const useGameLogic = () => {
                                 if (p.type === 'human') {
                                     const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
                                     updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null }));
-                                    
                                     const bakeTargets: {[key: string]: number} = {};
                                     finalP.majors.forEach(m => {
-                                        if (m.bakeRate || m.specialBake) {
-                                            bakeTargets[m.id] = 0;
-                                        }
+                                        if (m.bakeRate || m.specialBake) bakeTargets[m.id] = 0;
                                     });
-                                    
                                     updatePlayer(pId, () => ({
                                         ...finalP,
                                         res: { ...finalP.res, workers: finalP.res.workers - 1 },
-                                        tempMode: { 
-                                            mode: 'bake_immediate', 
-                                            actId: p.tempMode!.actId, 
-                                            selectedMajorId: mId,
-                                            bakeTargets
-                                        }
+                                        tempMode: { mode: 'bake_immediate', actId: p.tempMode!.actId, selectedMajorId: mId, bakeTargets }
                                     }));
                                     return; 
                                 } else {
                                     const { in: inAmt, out: outAmt } = card.specialBake || { in: 1, out: 1 };
                                     const limit = card.specialBake?.limit || 999;
                                     const maxPossible = Math.min(Math.floor(finalP.res.grain / inAmt), limit);
-                                    
-                                    const batches = maxPossible;
-                                    
-                                    if (batches > 0) {
-                                        const cost = batches * inAmt;
-                                        const gain = batches * outAmt;
-                                        finalP.res.grain -= cost;
-                                        finalP.res.food += gain;
-                                        addLog(`${p.name} baked ${cost} grain -> ${gain} food`, p.color);
+                                    if (maxPossible > 0) {
+                                        finalP.res.grain -= maxPossible * inAmt;
+                                        finalP.res.food += maxPossible * outAmt;
+                                        addLog(`${p.name} baked ${maxPossible * inAmt} grain -> ${maxPossible * outAmt} food`, p.color);
                                         playSound('cook');
                                     }
                                 }
@@ -1730,13 +2046,28 @@ export const useGameLogic = () => {
                  
                  if (mode === 'simple' && act) {
                      let animalsGained = false;
+                     let needsResetAccumulation = false;
+
                      if (act.type === 'res') {
                         const amt = act.cur || act.amount || 0;
                         if (['sheep','boar','cow'].includes(act.res!)) {
                             // @ts-ignore
                             finalP.animals[act.res!] += amt;
+                            
+                            // Animal Dealer logic
+                            if (act.acc) {
+                                const trader = finalP.playedCards.find(c => c.id === 'o_dongwujiaoyiyuan');
+                                if (trader && finalP.res.food >= 1) {
+                                    finalP.res.food--;
+                                    // @ts-ignore
+                                    finalP.animals[act.res!] += 1;
+                                    finalP.playedCards = finalP.playedCards.map(c => c.id === trader.id ? updateCardStat(c, act.res!, 1) : c);
+                                    addLog(`${p.name} bought extra ${act.res} (Animal Dealer)`, p.color);
+                                }
+                            }
+
                             animalsGained = true;
-                            resetActionAccumulation(act.id);
+                            needsResetAccumulation = true;
                             playSound(act.res as any);
                         } else {
                             // @ts-ignore
@@ -1762,8 +2093,39 @@ export const useGameLogic = () => {
                                 }
                                 return updatedC;
                             });
+                            
+                            // INTERCEPT: Purchaser (Caiguren) - Choice
+                            if (p.type === 'human' && act.res === 'wood' && act.acc && finalP.playedCards.some(c => c.id === 'o_caiguren') && finalP.res.wood >= 1) {
+                                 // Commit base action but pause for choice
+                                 const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
+                                 updatePlayer(pId, () => ({ ...finalP, res: { ...finalP.res, workers: finalP.res.workers - 1 }, tempMode: { mode: 'choice_caiguren', actId: act.id } }));
+                                 updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null })); 
+                                 resetActionAccumulation(act.id);
+                                 return; // Stop here, wait for choice
+                            }
+                            
+                            // AI Purchaser
+                            if (p.type === 'ai' && act.res === 'wood' && act.acc && finalP.res.wood >= 1) {
+                                const caiguren = finalP.playedCards.find(c => c.id === 'o_caiguren');
+                                if (caiguren) {
+                                    finalP.res.wood -= 1;
+                                    finalP.res.food += 2;
+                                    finalP.playedCards = finalP.playedCards.map(c => c.id === caiguren.id ? updateCardStat(c, 'food', 2) : c);
+                                    addLog(`${p.name} used Purchaser: -1 Wood, +2 Food`, p.color);
+                                }
+                            }
 
-                            resetActionAccumulation(act.id);
+                            // Geologist
+                            if (['act_forest_3', 'act_reed1', 'act_clay_pit'].includes(act.id)) {
+                                 const geo = finalP.playedCards.find(c => c.id === 'o_dizhixuejia');
+                                 if (geo) {
+                                     finalP.res.clay += 1;
+                                     finalP.playedCards = finalP.playedCards.map(c => c.id === geo.id ? updateCardStat(c, 'clay', 1) : c);
+                                     addLog(`${p.name} found 1 Clay (Geologist)`, p.color);
+                                 }
+                            }
+
+                            needsResetAccumulation = true;
                             if (act.res === 'wood') playSound('wood');
                             else if (act.res === 'clay') playSound('clay');
                             else if (act.res === 'stone') playSound('stone');
@@ -1777,9 +2139,64 @@ export const useGameLogic = () => {
                     } else if (act.type === 'res_combo') {
                         if (act.id === 'act_market') {
                             finalP.res.reed += 1; finalP.res.stone += 1; finalP.res.food += 1;
+                            
+                            // INTERCEPT: Storehouse Keeper - Choice
+                            if (p.type === 'human' && finalP.playedCards.some(c => c.id === 'o_cangkukanshouyuan')) {
+                                const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
+                                updatePlayer(pId, () => ({ ...finalP, res: { ...finalP.res, workers: finalP.res.workers - 1 }, tempMode: { mode: 'choice_keeper', actId: act.id } }));
+                                updateGameState(prev => ({ ...prev, occupied: newOccupied, pendingAction: null }));
+                                return; // Stop here, wait for choice
+                            }
+
+                            // AI Storehouse Keeper
+                            if (p.type === 'ai') {
+                                const keeper = finalP.playedCards.find(c => c.id === 'o_cangkukanshouyuan');
+                                if (keeper) {
+                                    finalP.res.clay += 1;
+                                    finalP.playedCards = finalP.playedCards.map(c => c.id === keeper.id ? updateCardStat(c, 'clay', 1) : c);
+                                    addLog(`${p.name} got +1 Clay (Storehouse Keeper)`, p.color);
+                                }
+                            }
+
                             addLog(`${p.name} took Resource Market`, p.color);
                             playSound('gain');
                         }
+                    } else {
+                        // Tenant Farmer (Laborer)
+                        if (act.id === 'act_labor') {
+                             const tenant = finalP.playedCards.find(c => c.id === 'o_diannong');
+                             if (tenant) {
+                                 finalP.res.wood += 1;
+                                 finalP.res.clay += 1;
+                                 finalP.playedCards = finalP.playedCards.map(c => c.id === tenant.id ? updateCardStat(updateCardStat(c, 'wood', 1), 'clay', 1) : c);
+                                 addLog(`${p.name} got +1 Wood/Clay (Tenant Farmer)`, p.color);
+                             }
+                        }
+                         // Firewood Collector
+                         if (['act_plow', 'act_grain', 'r_sow', 'r_plow_sow'].includes(act.id) || act.mode === 'plow' || act.mode === 'sow') {
+                             const collector = finalP.playedCards.find(c => c.id === 'o_chaihuoshiqugong');
+                             if (collector) {
+                                 finalP.res.wood += 1;
+                                 finalP.playedCards = finalP.playedCards.map(c => c.id === collector.id ? updateCardStat(c, 'wood', 1) : c);
+                                 addLog(`${p.name} found wood (Collector)`, p.color);
+                             }
+                         }
+                    }
+                    
+                    if (needsResetAccumulation) {
+                         // Reset standard accumulation
+                         resetActionAccumulation(act.id);
+
+                         // Caiguren restoration logic (If AI used it, put 1 back)
+                         if (p.type === 'ai' && act.res === 'wood' && act.acc) {
+                             if (finalP.playedCards.some(c => c.id === 'o_caiguren') && p.res.wood >= 1) {
+                                  updateGameState(prev => ({
+                                       ...prev,
+                                       baseActions: prev.baseActions.map(a => a.id === act.id ? { ...a, cur: 1 } : a),
+                                       roundCards: prev.roundCards.map(a => a.id === act.id ? { ...a, cur: 1 } : a)
+                                  }));
+                             }
+                         }
                     }
 
                     if (animalsGained) {
@@ -2069,7 +2486,14 @@ export const useGameLogic = () => {
     const selectMajor = (majorId: string) => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         const pIdx = (startPlayer + turnIdx) % 4;
-        updatePlayer(pIdx, p => ({...p, tempMode: { ...p.tempMode!, selectedMajorId: majorId }}));
+        updatePlayer(pIdx, p => ({
+            ...p, 
+            tempMode: { 
+                ...p.tempMode!, 
+                selectedMajorId: majorId,
+                selectedCardId: undefined // Mutually exclusive
+            }
+        }));
         playSound('click');
     };
 
@@ -2098,13 +2522,13 @@ export const useGameLogic = () => {
         });
     };
     
-    const openCardDetail = (card: Card) => {
-        setViewingCard(card);
+    const openCardDetail = (card: Card, owner: Player) => {
+        setViewingCardState({ card, owner });
         playSound('click');
     };
 
     const closeCardDetail = () => {
-        setViewingCard(null);
+        setViewingCardState(null);
         playSound('click');
     };
     
@@ -2127,7 +2551,7 @@ export const useGameLogic = () => {
         setSubAction,
         selectMajor,
         renovate,
-        viewingCard,
+        viewingCardState, // Updated export
         openCardDetail,
         closeCardDetail,
         adjustHarvest,
@@ -2154,6 +2578,7 @@ export const useGameLogic = () => {
         selectCardForPlay,
         toggleHandView,
         isViewingHand,
+        resolveCardChoice,
         debug,
         playSound,
         toggleMute,
