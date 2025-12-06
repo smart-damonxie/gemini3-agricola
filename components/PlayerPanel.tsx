@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { Player, Allocation, MajorCard, ResourceType } from '../types';
+import { Player, Allocation, Card, ResourceType } from '../types';
 import FarmTile from './FarmTile';
 import { calculateAllocation, calculateScore, analyzeFarmLayout } from '../utils/gameLogic';
 import { LIMIT_FENCES, LIMIT_STABLES } from '../constants';
@@ -10,7 +11,7 @@ interface Props {
   isNextStart: boolean;
   onFarmClick: (tileIdx: number) => void;
   onFenceClick?: (tileIdx: number, side: 't'|'b'|'l'|'r') => void;
-  onMajorClick?: (major: MajorCard) => void;
+  onMajorClick?: (card: Card) => void;
   onConvertClick?: () => void;
   onAdjustClick?: () => void;
   // Overflow props
@@ -19,6 +20,7 @@ interface Props {
   onCook?: (type: 'sheep'|'boar'|'cow') => void;
   onConfirmOverflow?: () => void;
   onResetOverflow?: () => void;
+  onViewHand?: () => void;
 }
 
 const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
@@ -30,7 +32,7 @@ const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
 const PlayerPanel: React.FC<Props> = ({ 
     player, isActive, isNextStart, 
     onFarmClick, onFenceClick, onMajorClick, onConvertClick, onAdjustClick,
-    isOverflowing, onDiscard, onCook, onConfirmOverflow, onResetOverflow
+    isOverflowing, onDiscard, onCook, onConfirmOverflow, onResetOverflow, onViewHand
 }) => {
   const allocation = calculateAllocation(player);
   const score = calculateScore(player);
@@ -76,10 +78,10 @@ const PlayerPanel: React.FC<Props> = ({
   }
   
   // Cooking check for overflow
-  const canCookOverflow = onCook && player.majors.some(m => m.cook);
+  const canCookOverflow = onCook && (player.majors.some(m => m.cook) || player.playedCards.some(c => c.cook));
   const getCookRate = (type: 'sheep'|'boar'|'cow') => {
       let rate = 0;
-      player.majors.forEach(m => {
+      [...player.majors, ...player.playedCards].forEach(m => {
           if (m.cook && m.cook[type] > rate) rate = m.cook[type];
       });
       return rate;
@@ -88,6 +90,9 @@ const PlayerPanel: React.FC<Props> = ({
   // Food Requirement Calculation
   const foodRequired = (player.res.maxWorkers - player.newbornCount) * 2 + player.newbornCount * 1;
   const foodStatusColor = player.res.food >= foodRequired ? 'text-green-400' : 'text-red-400';
+  
+  // Combine all played cards for display
+  const allPlayedCards = [...player.majors, ...player.playedCards];
 
   return (
     <div 
@@ -116,6 +121,19 @@ const PlayerPanel: React.FC<Props> = ({
                 <span className="text-gray-500 text-[10px]">/</span>
                 <span className="text-gray-400">{foodRequired}</span>
               </span>
+
+              {/* HAND COUNT (CLICKABLE FOR HUMAN) */}
+              <button 
+                  onClick={(e) => {
+                      e.stopPropagation();
+                      if (player.type === 'human' && onViewHand) onViewHand();
+                  }}
+                  disabled={player.type !== 'human'}
+                  className={`text-[10px] text-purple-300 font-normal bg-purple-900/30 px-2 py-0.5 rounded border border-purple-500/30 flex items-center transition-all ${player.type === 'human' ? 'hover:bg-purple-800/50 hover:border-purple-400 cursor-pointer shadow-sm hover:shadow-purple-500/20' : 'cursor-default opacity-70'}`} 
+                  title={player.type === 'human' ? "Click to view your cards" : "Cards in opponent's hand"}
+              >
+                  🃏 {player.hand.length}
+              </button>
           </div>
         </div>
 
@@ -236,18 +254,24 @@ const PlayerPanel: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* CARDS */}
-          <div className="flex-1 flex flex-col gap-2 min-w-[80px]">
-              <div className="bg-black/20 p-1.5 rounded h-full border border-white/5">
-                  <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 border-b border-white/10">Majors</div>
-                  <div className="flex flex-wrap gap-1 content-start">
-                      {player.majors.length === 0 && <span className="text-[10px] text-gray-600 italic">None</span>}
-                      {player.majors.map(m => (
-                          <div key={m.id} onClick={() => onMajorClick && onMajorClick(m)} className="w-8 h-10 bg-orange-700 border border-orange-400 rounded-sm text-[10px] flex flex-col items-center justify-center text-white cursor-help hover:scale-110 transition-transform shadow-sm leading-none text-center" title={m.name}>
-                              <span className="scale-75">{m.name.substring(0, 2)}</span>
+          {/* PLAYED CARDS (Unified) */}
+          <div className="flex-1 bg-black/20 p-1.5 rounded border border-white/5 overflow-y-auto scrollbar-thin scrollbar-thumb-stone-600 max-h-[180px]">
+              <div className="text-[10px] text-gray-400 uppercase font-bold mb-1 border-b border-white/10 sticky top-0 bg-stone-800/80 backdrop-blur-sm z-10 w-full">Played Cards</div>
+              <div className="flex flex-wrap gap-1 content-start">
+                  {allPlayedCards.length === 0 && <span className="text-[10px] text-gray-600 italic">None</span>}
+                  {allPlayedCards.map((c, idx) => {
+                      // IMPROVED CONTRAST COLORS
+                      let bgClass = 'bg-stone-600 border-stone-400 text-white';
+                      if (c.type === 'major') bgClass = 'bg-orange-700 border-orange-400 text-white';
+                      else if (c.type === 'occupation') bgClass = 'bg-yellow-500 border-yellow-700 text-stone-900 font-bold'; // Dark text on yellow
+                      else if (c.type === 'minor') bgClass = 'bg-orange-400 border-orange-600 text-stone-900 font-bold'; // Dark text on orange
+
+                      return (
+                          <div key={`${c.id}-${idx}`} onClick={() => onMajorClick && onMajorClick(c)} className={`relative w-8 h-10 border rounded-sm text-[10px] flex flex-col items-center justify-center cursor-help hover:scale-110 transition-transform shadow-sm leading-none text-center ${bgClass}`} title={c.name}>
+                              <span className="scale-75">{c.name.substring(0, 2)}</span>
                           </div>
-                      ))}
-                  </div>
+                      );
+                  })}
               </div>
           </div>
       </div>

@@ -1,4 +1,3 @@
-import { ResourceType, Cost, MajorCard, Action, HarvestConversion, HarvestSubPhase, TempMode, GameState, LogEntry, FarmLayout, Allocation } from './types';
 
 export type ResourceType = 'wood' | 'clay' | 'reed' | 'stone' | 'food' | 'grain' | 'veg' | 'sheep' | 'boar' | 'cow';
 
@@ -10,20 +9,36 @@ export interface Cost {
   food?: number;
 }
 
-export interface MajorCard {
+export type CardType = 'occupation' | 'minor' | 'major';
+
+export interface CardEffect {
+  type: 'immediate' | 'passive_res' | 'passive_action' | 'harvest' | 'round_start' | 'end_game';
+  trigger?: string; // e.g., 'wood', 'reed', 'meeting'
+  bonus?: ResourceType;
+  amount?: number;
+}
+
+export interface Card {
   id: string;
   name: string;
+  type: CardType;
+  desc: string;
   cost: Cost;
   score: number;
-  type?: 'cook' | 'bake';
-  desc: string;
-  special?: string;
-  bakeRate?: number;
+  // Major specific / Shared
   cook?: { sheep: number; boar: number; cow: number; veg: number };
-  bonusType?: ResourceType;
-  convert?: { [key: string]: number };
+  bakeRate?: number;
   specialBake?: { in: number; out: number; limit?: number };
+  convert?: { [key: string]: number };
+  special?: string;
+  bonusType?: ResourceType;
+  // New
+  effect?: CardEffect;
+  statTracker?: { [key: string]: number }; // Tracks accumulated bonuses by type
 }
+
+// Alias for backward compatibility if needed, but Card covers it
+export type MajorCard = Card;
 
 export interface Action {
   id: string;
@@ -86,7 +101,9 @@ export interface Player {
   fences: Set<string>; // "idx-side" e.g., "0-t", "5-l"
   stablesCount: number;
   houseType: 'wood' | 'clay' | 'stone';
-  majors: MajorCard[];
+  majors: MajorCard[]; // Played major cards
+  hand: Card[]; // New: Cards in hand
+  playedCards: Card[]; // New: Active occupation/minor cards
   begging: number;
   tempMode: TempMode | null;
   harvestTemp: HarvestConversion | null; 
@@ -109,6 +126,7 @@ export interface TempMode {
   selectedMajorId?: string;
   subAction?: 'sow' | 'bake' | 'both' | 'plow' | 'upgrade'; // Added upgrade for Fireplace
   bakeTargets?: { [majorId: string]: number }; // Tracks grain assigned to specific baking majors
+  selectedCardId?: string | null; // For Hand Selection (Occupation/Minor)
 }
 
 export interface GameState {

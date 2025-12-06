@@ -1,5 +1,6 @@
 
-import { Action, MajorCard } from "./types";
+
+import { Action, Card } from "./types";
 
 export const LIMIT_FENCES = 15;
 export const LIMIT_STABLES = 4;
@@ -17,17 +18,31 @@ export const SCORING_TIERS: { [key: string]: number[] } = {
   cow: [-1, 1, 2, 2, 3, 3, 4],
 };
 
-export const DB_MAJORS: MajorCard[] = [
-  { id: 'm1', name: '🔥火炉(2砖)', cost: { clay: 2 }, score: 1, type: 'cook', desc: '烤面包(2食), 变食:羊2/猪2/牛3/菜2', bakeRate: 2, cook: { sheep: 2, boar: 2, cow: 3, veg: 2 } },
-  { id: 'm2', name: '🔥火炉(3砖)', cost: { clay: 3 }, score: 1, type: 'cook', desc: '同上', bakeRate: 2, cook: { sheep: 2, boar: 2, cow: 3, veg: 2 } },
-  { id: 'm3', name: '🍲壁炉(4砖)', cost: { clay: 4 }, score: 1, type: 'cook', desc: '烤面包(3食), 变食:羊2/猪3/牛4/菜3', bakeRate: 3, cook: { sheep: 2, boar: 3, cow: 4, veg: 3 } },
-  { id: 'm4', name: '🍲壁炉(5砖)', cost: { clay: 5 }, score: 1, type: 'cook', desc: '同上(羊2/猪3/牛4/菜3)', bakeRate: 3, cook: { sheep: 2, boar: 3, cow: 4, veg: 3 } },
-  { id: 'm5', name: '💧水井', cost: { stone: 3, wood: 1 }, score: 4, desc: '接下来5轮各放1食物，翻开时获得', special: 'well' },
-  { id: 'm6', name: '🧺编筐工坊', cost: { reed: 2, stone: 2 }, score: 2, desc: '喂养:1苇->3食. 终局加分:2/4/5苇->1/2/3分', special: 'bonus', bonusType: 'reed', convert: { reed: 1, food: 3 } },
-  { id: 'm7', name: '🪑家具工坊', cost: { wood: 2, stone: 2 }, score: 2, desc: '喂养:1木->2食. 终局加分:3/5/7木->1/2/3分', special: 'bonus', bonusType: 'wood', convert: { wood: 1, food: 2 } },
-  { id: 'm8', name: '🧱陶艺工坊', cost: { clay: 2, stone: 2 }, score: 2, desc: '喂养:1砖->2食. 终局加分:3/5/7砖->1/2/3分', special: 'bonus', bonusType: 'clay', convert: { clay: 1, food: 2 } },
-  { id: 'm9', name: '🪨石造烤炉', cost: { stone: 3, clay: 1 }, score: 3, desc: '高效烤面包(Max 2: 1麦->4食)', type: 'bake', specialBake: { in: 1, out: 4, limit: 2 } },
-  { id: 'm10', name: '🏺砖造烤炉', cost: { clay: 3, stone: 1 }, score: 2, desc: '高效烤面包(Max 1: 1麦->5食)', type: 'bake', specialBake: { in: 1, out: 5, limit: 1 } },
+export const DB_MAJORS: Card[] = [
+  { id: 'm1', name: '🔥火炉(2砖)', type: 'major', cost: { clay: 2 }, score: 1, desc: '烤面包(2食), 变食:羊2/猪2/牛3/菜2', bakeRate: 2, cook: { sheep: 2, boar: 2, cow: 3, veg: 2 } },
+  { id: 'm2', name: '🔥火炉(3砖)', type: 'major', cost: { clay: 3 }, score: 1, desc: '同上', bakeRate: 2, cook: { sheep: 2, boar: 2, cow: 3, veg: 2 } },
+  { id: 'm3', name: '🍲壁炉(4砖)', type: 'major', cost: { clay: 4 }, score: 1, desc: '烤面包(3食), 变食:羊2/猪3/牛4/菜3', bakeRate: 3, cook: { sheep: 2, boar: 3, cow: 4, veg: 3 } },
+  { id: 'm4', name: '🍲壁炉(5砖)', type: 'major', cost: { clay: 5 }, score: 1, desc: '同上(羊2/猪3/牛4/菜3)', bakeRate: 3, cook: { sheep: 2, boar: 3, cow: 4, veg: 3 } },
+  { id: 'm5', name: '💧水井', type: 'major', cost: { stone: 3, wood: 1 }, score: 4, desc: '接下来5轮各放1食物，翻开时获得', special: 'well' },
+  { id: 'm6', name: '🧺编筐工坊', type: 'major', cost: { reed: 2, stone: 2 }, score: 2, desc: '喂养:1苇->3食. 终局加分:2/4/5苇->1/2/3分', special: 'bonus', bonusType: 'reed', convert: { reed: 1, food: 3 } },
+  { id: 'm7', name: '🪑家具工坊', type: 'major', cost: { wood: 2, stone: 2 }, score: 2, desc: '喂养:1木->2食. 终局加分:3/5/7木->1/2/3分', special: 'bonus', bonusType: 'wood', convert: { wood: 1, food: 2 } },
+  { id: 'm8', name: '🧱陶艺工坊', type: 'major', cost: { clay: 2, stone: 2 }, score: 2, desc: '喂养:1砖->2食. 终局加分:3/5/7砖->1/2/3分', special: 'bonus', bonusType: 'clay', convert: { clay: 1, food: 2 } },
+  { id: 'm9', name: '🪨石造烤炉', type: 'major', cost: { stone: 3, clay: 1 }, score: 3, desc: '高效烤面包(Max 2: 1麦->4食)', specialBake: { in: 1, out: 4, limit: 2 } },
+  { id: 'm10', name: '🏺砖造烤炉', type: 'major', cost: { clay: 3, stone: 1 }, score: 2, desc: '高效烤面包(Max 1: 1麦->5食)', specialBake: { in: 1, out: 5, limit: 1 } },
+];
+
+export const DB_OCCUPATIONS: Card[] = [
+    { id: 'o1', name: '家庭教师 (Tutor)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '每当此时打出"聚会"拿起始时，额外获得1食物', effect: { type: 'passive_action', trigger: 'meeting', bonus: 'food', amount: 1 } },
+    { id: 'o2', name: '伐木工 (Woodcutter)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '每当你拿"木头"时，额外获得1木头', effect: { type: 'passive_res', trigger: 'wood', amount: 1 } },
+    { id: 'o3', name: '石匠 (Mason)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '每当你拿"石头"时，额外获得1石头', effect: { type: 'passive_res', trigger: 'stone', amount: 1 } },
+    { id: 'o4', name: '有机农夫 (Organic)', type: 'occupation', cost: { food: 1 }, score: 0, desc: '游戏结束时，每有一种动物(羊/猪/牛)得1分', effect: { type: 'end_game' } },
+];
+
+export const DB_MINORS: Card[] = [
+    { id: 'n1', name: '木柴 (Firewood)', type: 'minor', cost: {}, score: 0, desc: '立即获得1木头', effect: { type: 'immediate', bonus: 'wood', amount: 1 } },
+    { id: 'n2', name: '简易灶台 (Hearth)', type: 'minor', cost: { clay: 1 }, score: 1, desc: '如同壁炉: 变食羊2/猪2/牛3/菜2', cook: { sheep: 2, boar: 2, cow: 3, veg: 2 } },
+    { id: 'n3', name: '私人林地 (Private Forest)', type: 'minor', cost: { food: 2 }, score: 0, desc: '每轮开始时(收获或普通)，获得1木头', effect: { type: 'round_start', bonus: 'wood', amount: 1 } },
+    { id: 'n4', name: '木筏 (Raft)', type: 'minor', cost: { wood: 2 }, score: 0, desc: '每当你拿"芦苇"时，额外获得1食物', effect: { type: 'passive_action', trigger: 'reed', bonus: 'food', amount: 1 } },
 ];
 
 export const BASE_ACTIONS: Action[] = [
@@ -40,8 +55,10 @@ export const BASE_ACTIONS: Action[] = [
   { id: 'act_fish', name: '🐟 钓鱼 (1食)', acc: 1, cur: 1, type: 'res', res: 'food' },
   { id: 'act_travel', name: '🎭 卖艺 (1食)', acc: 1, cur: 1, type: 'res', res: 'food' },
   { id: 'act_labor', name: '👷 临时工 (2食)', type: 'res', res: 'food', amount: 2 },
+  { id: 'act_occupation1', name: '📚 职业训练1', type: 'special', mode: 'play_occupation', desc: '1食物->打出1职业' },
+  { id: 'act_occupation2', name: '📚 职业训练2', type: 'special', mode: 'play_occupation', desc: '前2张1食，之后2食' },
   { id: 'act_grain', name: '🌾 小麦种子', type: 'res', res: 'grain', amount: 1 },
-  { id: 'act_meeting', name: '👥 聚会场所', type: 'special', mode: 'meeting', desc: '成为下轮起始玩家' },
+  { id: 'act_meeting', name: '👥 聚会场所', type: 'special', mode: 'meeting', desc: '起始玩家 (可选:打次发)' },
   { id: 'act_market', name: '🛒 资源市场', type: 'res_combo', desc: '1苇+1石+1食' },
   { id: 'act_plow', name: '🚜 犁地', type: 'special', mode: 'plow' },
   { id: 'act_build', name: '🏠 建房/马厩', type: 'special', mode: 'build_menu', desc: '自由建造房间/马厩' },

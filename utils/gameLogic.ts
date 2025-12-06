@@ -108,10 +108,26 @@ export const calculateScore = (p: Player): number => {
 
     s += p.res.maxWorkers * 3;
     
-    // Major Scores
+    // Major Scores (Majors are also in playedCards now if consistent, but usually kept separate in current codebase)
     p.majors.forEach(m => s += m.score);
     
-    // Bonus Points for Workshops
+    // Played Cards Scores (Occupations / Minors)
+    p.playedCards.forEach(c => s += c.score);
+
+    // End Game Effects
+    p.playedCards.forEach(c => {
+        if (c.effect?.type === 'end_game') {
+            if (c.id === 'o4') { // Organic Farmer
+                let types = 0;
+                if (p.animals.sheep > 0) types++;
+                if (p.animals.boar > 0) types++;
+                if (p.animals.cow > 0) types++;
+                s += types;
+            }
+        }
+    });
+    
+    // Bonus Points for Workshops (Majors)
     p.majors.filter(m => m.special === 'bonus').forEach(m => {
         if (m.id === 'm7') { // Joinery (Wood)
             // 3/5/7 wood -> 1/2/3 points
