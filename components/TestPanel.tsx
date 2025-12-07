@@ -47,7 +47,8 @@ const TEST_PLAYER_TEMPLATE: Player = {
     harvestTemp: null,
     pendingBreeding: null,
     assignedAnimals: {},
-    workshopsUsed: { reed: false, wood: false, clay: false }
+    workshopsUsed: { reed: false, wood: false, clay: false },
+    firewoodCollectorTriggered: false
 };
 
 const TestPanel: React.FC<Props> = ({ isOpen, onClose }) => {

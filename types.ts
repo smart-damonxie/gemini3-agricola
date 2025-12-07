@@ -112,6 +112,7 @@ export interface Player {
   pendingBreeding: { sheep: number, boar: number, cow: number } | null;
   assignedAnimals: { [key: number]: ResourceType[] };
   workshopsUsed: { reed: boolean; wood: boolean; clay: boolean }; // Track usage in feed phase
+  firewoodCollectorTriggered: boolean; // Tracks if o_chaihuoshiqugong condition met this round
 }
 
 export interface TempMode {

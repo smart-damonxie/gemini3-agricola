@@ -936,7 +936,7 @@ const App: React.FC = () => {
                                  <div className="text-center font-mono text-white">{count}</div>
                                  <div className="flex items-center justify-end gap-2">
                                      <button disabled={!allowed} onClick={() => adjustConversion(res as any, -1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-30 text-white font-bold">-</button>
-                                     <span className="w-4 text-center text-yellow-400 font-bold">{(activePlayer.conversionTemp as any)[res]}</span>
+                                     <span className="w-4 text-center text-yellow-400 font-bold">{String((activePlayer.conversionTemp as any)[res])}</span>
                                      <button disabled={!allowed} onClick={() => adjustConversion(res as any, 1)} className="w-6 h-6 bg-stone-700 rounded hover:bg-stone-600 disabled:opacity-30 text-white font-bold">+</button>
                                  </div>
                              </div>

@@ -1,3 +1,4 @@
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType, Card } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, DB_OCCUPATIONS, DB_MINORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES, LIMIT_FENCES } from '../constants';
@@ -45,7 +46,8 @@ const createInitialPlayers = (): Player[] => {
             harvestTemp: null,
             pendingBreeding: null,
             assignedAnimals: {},
-            workshopsUsed: { reed: false, wood: false, clay: false }
+            workshopsUsed: { reed: false, wood: false, clay: false },
+            firewoodCollectorTriggered: false
         };
     });
 };
@@ -345,9 +347,24 @@ export const useGameLogic = () => {
         
         const currentPs = stateRef.current.players;
         const newPlayers = currentPs.map(p => {
+            let newRes = { ...p.res, workers: p.res.maxWorkers };
+            let newPlayed = [...p.playedCards];
+
+            // Firewood Collector Logic (End of Round)
+            if (p.firewoodCollectorTriggered) {
+                 const card = newPlayed.find(c => c.id === 'o_chaihuoshiqugong');
+                 if (card) {
+                     newRes.wood += 1;
+                     newPlayed = newPlayed.map(c => c.id === card.id ? updateCardStat(c, 'wood', 1) : c);
+                     addLog(`${p.name} collected 1 Wood (Firewood Collector)`, p.color);
+                 }
+            }
+
             return {
                 ...p,
-                res: { ...p.res, workers: p.res.maxWorkers }
+                res: newRes,
+                playedCards: newPlayed,
+                firewoodCollectorTriggered: false // Reset for next round
             };
         });
         stateRef.current.players = newPlayers;
@@ -589,6 +606,13 @@ export const useGameLogic = () => {
                          addLog(`${p.name} found 1 Clay (Geologist)`, p.color);
                      }
                 }
+                
+                // Firewood Collector - Trigger Flag (Grain/Plow/Sow logic handled here for AI simplicity)
+                if (['act_grain'].includes(act.id)) {
+                    if (newP.playedCards.some(c => c.id === 'o_chaihuoshiqugong')) {
+                        newP.firewoodCollectorTriggered = true;
+                    }
+                }
 
                 needsResetAccumulation = true;
             }
@@ -672,12 +696,10 @@ export const useGameLogic = () => {
                  addLog(`${p.name} learnt nothing (no affordable occupation)`, p.color);
              }
         } else {
-             // FARM ACTIONS (Plow, Sow, etc.) - Trigger Firewood Collector
-             if (['act_plow', 'act_grain', 'r_sow', 'r_plow_sow'].includes(act.id) || act.mode === 'plow' || act.mode === 'sow') {
-                 const collector = newP.playedCards.find(c => c.id === 'o_chaihuoshiqugong');
-                 if (collector) {
-                     newP.res.wood += 1;
-                     newP.playedCards = newP.playedCards.map(c => c.id === collector.id ? updateCardStat(c, 'wood', 1) : c);
+             // FARM ACTIONS (Plow, Sow, etc.) - Trigger Firewood Collector Flag
+             if (['act_plow', 'act_grain', 'r_sow', 'r_plow_sow'].includes(act.id) || act.mode === 'plow' || act.mode === 'sow' || act.mode === 'sow_bake_choice') {
+                 if (newP.playedCards.some(c => c.id === 'o_chaihuoshiqugong')) {
+                     newP.firewoodCollectorTriggered = true;
                  }
              }
 
@@ -760,7 +782,7 @@ export const useGameLogic = () => {
         updateGameState(prev => ({ 
             ...prev, 
             turnPhase: 'overflow', 
-            overflowPlayer: pId,
+            overflowPlayer: pId, 
             overflowSnapshot: JSON.stringify(snapshotObj)
         }));
         playSound('error');
@@ -1113,119 +1135,121 @@ export const useGameLogic = () => {
         processFeedPhase();
     };
 
-    const aiHarvestFeed = (p: Player) => {
-        const newP: Player = { ...p, res: { ...p.res }, animals: { ...p.animals }, begging: p.begging };
-        const need = (newP.res.maxWorkers - newP.newbornCount) * 2 + newP.newbornCount * 1;
-        let deficit = need - newP.res.food;
-        const keepSeeds = deficit > 0 ? 0 : 1; 
-        if (deficit > 0 && newP.res.grain > keepSeeds) { 
-            const available = newP.res.grain - keepSeeds;
-            const take = Math.min(available, deficit); 
-            newP.res.grain -= take; newP.res.food += take; deficit -= take; 
-        }
-        if (deficit > 0 && newP.res.veg > keepSeeds) { 
-            const available = newP.res.veg - keepSeeds;
-            const take = Math.min(available, deficit); 
-            newP.res.veg -= take; newP.res.food += take; deficit -= take; 
-        }
-        
-        // Find ALL cooking appliances (Majors + Minors)
-        const cookers = [...newP.majors, ...newP.playedCards].filter(m => (m.cook));
-        const bestCooker = cookers.length > 0 ? cookers.reduce((prev, current) => (prev.cook?.sheep || 0) > (current.cook?.sheep || 0) ? prev : current) : null;
-
-        if (deficit > 0 && bestCooker && bestCooker.cook) {
-             ['sheep', 'boar', 'cow'].forEach(t => {
-                 const type = t as 'sheep'|'boar'|'cow';
-                 // @ts-ignore
-                 let count = newP.animals[type];
-                 let available = Math.max(0, count - 2);
-                 const rate = bestCooker.cook![type];
-                 while (deficit > 0 && available > 0) {
-                     // @ts-ignore
-                     newP.animals[type]--; available--; newP.res.food += rate; deficit -= rate;
-                 }
-                 if (deficit > 0) {
-                     // @ts-ignore
-                     count = newP.animals[type]; 
-                     while (deficit > 0 && count > 0) {
-                         // @ts-ignore
-                         newP.animals[type]--; count--; newP.res.food += rate; deficit -= rate;
-                     }
-                 }
-             });
-        }
-        if (deficit > 0) {
-             if (newP.res.grain > 0) { const take = Math.min(newP.res.grain, deficit); newP.res.grain -= take; newP.res.food += take; deficit -= take; }
-             if (newP.res.veg > 0) { const take = Math.min(newP.res.veg, deficit); newP.res.veg -= take; newP.res.food += take; deficit -= take; }
-        }
-        const pay = Math.min(newP.res.food, need);
-        newP.res.food -= pay;
-        if (need - pay > 0) newP.begging += (need - pay);
-        updatePlayer(p.id, () => newP);
-        setTimeout(() => advanceFeedStep(), 600);
-    };
-
     const processBreedPhase = () => {
         if (!stateRef.current.gameState.harvestState) return;
         const { harvestState } = stateRef.current.gameState;
+        
         if (harvestState.currentIdx >= harvestState.queue.length) {
-            updateGameState(prev => ({ ...prev, harvestPhase: false, harvestSubPhase: null, harvestState: null }));
-            advanceRound();
+            // End Harvest
+            updateGameState(prev => ({ 
+                ...prev, 
+                harvestPhase: false, 
+                harvestSubPhase: null, 
+                harvestState: null 
+            }));
+            addLog("Harvest Complete", "green");
+            playSound('success');
+            
+            if (stateRef.current.gameState.round >= MAX_ROUNDS) {
+                 updateGameState(prev => ({ ...prev, gameOver: true }));
+            } else {
+                 advanceRound();
+            }
             return;
         }
+
         const pIdx = harvestState.queue[harvestState.currentIdx];
         const p = stateRef.current.players[pIdx];
-        const newborns = { sheep: 0, boar: 0, cow: 0 };
-        if (p.animals.sheep >= 2) newborns.sheep = 1;
-        if (p.animals.boar >= 2) newborns.boar = 1;
-        if (p.animals.cow >= 2) newborns.cow = 1;
-        const hasNewborns = newborns.sheep + newborns.boar + newborns.cow > 0;
-
-        if (!hasNewborns) {
-            scheduleNext(() => advanceBreedStep(), 100);
-            return;
-        }
-
-        const simP = { 
-            ...p, 
-            animals: { 
-                sheep: p.animals.sheep + newborns.sheep,
-                boar: p.animals.boar + newborns.boar,
-                cow: p.animals.cow + newborns.cow
-            },
-            newborns: {
-                sheep: p.newborns.sheep + newborns.sheep,
-                boar: p.newborns.boar + newborns.boar,
-                cow: p.newborns.cow + newborns.cow
-            }
-        };
-
-        if (p.type === 'human' && hasNewborns) {
-             // Play animal sound for the first breed
-             if (newborns.sheep) playSound('sheep');
-             else if (newborns.boar) playSound('boar');
-             else if (newborns.cow) playSound('cow');
-        }
-
-        updatePlayer(p.id, () => simP);
-
-        if (p.type === 'human') {
-            startOverflow(p.id);
-        } else {
-             const alloc = calculateAllocation(simP);
+        
+        // Check breeding
+        const breeding = { sheep: 0, boar: 0, cow: 0 };
+        if (p.animals.sheep >= 2) breeding.sheep = 1;
+        if (p.animals.boar >= 2) breeding.boar = 1;
+        if (p.animals.cow >= 2) breeding.cow = 1;
+        
+        const totalBreeding = breeding.sheep + breeding.boar + breeding.cow;
+        
+        if (totalBreeding > 0) {
+             updatePlayer(pIdx, pp => ({
+                 ...pp,
+                 pendingBreeding: breeding
+             }));
+             
+             // Check if can accommodate without overflow
+             // We temporarily add animals to see if they fit
+             const tempP = { 
+                 ...p, 
+                 animals: { 
+                     sheep: p.animals.sheep + breeding.sheep,
+                     boar: p.animals.boar + breeding.boar,
+                     cow: p.animals.cow + breeding.cow
+                 },
+                 newborns: breeding // Protect these
+             };
+             
+             const alloc = calculateAllocation(tempP);
+             
              if (alloc.overflow > 0) {
-                 const discarded = aiDiscardOverflow(simP, alloc.overflow);
-                 simP.animals.sheep -= discarded.sheep; simP.animals.boar -= discarded.boar; simP.animals.cow -= discarded.cow;
-                 updatePlayer(p.id, () => simP);
+                 if (p.type === 'human') {
+                     addLog(`${p.name} has newborn animals but limited space!`, 'yellow');
+                     startOverflow(pIdx);
+                     return;
+                 } else {
+                     // AI discards overflow (likely the newborns if no space, or cheap adults)
+                     // AI logic: keep if space, else discard
+                     const discarded = aiDiscardOverflow(tempP, alloc.overflow);
+                     // Apply discard to tempP
+                     tempP.animals.sheep -= discarded.sheep;
+                     tempP.animals.boar -= discarded.boar;
+                     tempP.animals.cow -= discarded.cow;
+                     // Simplified: just update player.
+                     updatePlayer(pIdx, () => tempP);
+                     addLog(`${p.name} bred animals but discarded overflow`, p.color);
+                 }
+             } else {
+                 // Fits fine
+                 updatePlayer(pIdx, pp => ({
+                     ...pp,
+                     animals: {
+                         sheep: pp.animals.sheep + breeding.sheep,
+                         boar: pp.animals.boar + breeding.boar,
+                         cow: pp.animals.cow + breeding.cow
+                     },
+                     newborns: breeding,
+                     pendingBreeding: null
+                 }));
+                 addLog(`${p.name} bred ${totalBreeding} new animal(s)`, p.color);
+                 playSound('baby');
              }
-             setTimeout(() => advanceBreedStep(), 600);
         }
+        
+        scheduleNext(() => advanceBreedStep(), 500);
     };
 
     const advanceBreedStep = () => {
         if (!stateRef.current.gameState.harvestState) return; 
         updateGameState(prev => ({...prev, harvestState: { ...prev.harvestState!, currentIdx: prev.harvestState!.currentIdx + 1 }}));
         processBreedPhase();
+    };
+    
+    const aiHarvestFeed = (p: Player) => {
+        // AI Feed Logic
+        const need = (p.res.maxWorkers - p.newbornCount) * 2 + p.newbornCount * 1;
+        
+        // Simple heuristic: If food < need, take begging
+        const pay = Math.min(p.res.food, need);
+        const begging = Math.max(0, need - pay);
+        
+        updatePlayer(p.id, pp => ({
+            ...pp,
+            res: { ...pp.res, food: pp.res.food - pay },
+            begging: pp.begging + begging
+        }));
+        
+        if (begging > 0) addLog(`${p.name} took ${begging} begging cards`, 'red');
+        else addLog(`${p.name} fed family`, p.color);
+        
+        scheduleNext(() => advanceFeedStep(), 500);
     };
 
     // --- Actions ---
@@ -2124,6 +2148,13 @@ export const useGameLogic = () => {
                                      addLog(`${p.name} found 1 Clay (Geologist)`, p.color);
                                  }
                             }
+                            
+                            // Firewood Collector Trigger (Simple Actions)
+                            if (['act_grain'].includes(act.id)) {
+                                if (finalP.playedCards.some(c => c.id === 'o_chaihuoshiqugong')) {
+                                    finalP.firewoodCollectorTriggered = true;
+                                }
+                            }
 
                             needsResetAccumulation = true;
                             if (act.res === 'wood') playSound('wood');
@@ -2172,15 +2203,6 @@ export const useGameLogic = () => {
                                  addLog(`${p.name} got +1 Wood/Clay (Tenant Farmer)`, p.color);
                              }
                         }
-                         // Firewood Collector
-                         if (['act_plow', 'act_grain', 'r_sow', 'r_plow_sow'].includes(act.id) || act.mode === 'plow' || act.mode === 'sow') {
-                             const collector = finalP.playedCards.find(c => c.id === 'o_chaihuoshiqugong');
-                             if (collector) {
-                                 finalP.res.wood += 1;
-                                 finalP.playedCards = finalP.playedCards.map(c => c.id === collector.id ? updateCardStat(c, 'wood', 1) : c);
-                                 addLog(`${p.name} found wood (Collector)`, p.color);
-                             }
-                         }
                     }
                     
                     if (needsResetAccumulation) {
@@ -2209,6 +2231,14 @@ export const useGameLogic = () => {
                              return; 
                          }
                     }
+                 }
+
+                 // Firewood Collector Trigger for Complex Actions (Plow, Sow, etc)
+                 if (['plow', 'sow', 'plow_sow', 'sow_bake_choice'].includes(mode)) {
+                     const collector = finalP.playedCards.find(c => c.id === 'o_chaihuoshiqugong');
+                     if (collector) {
+                         finalP.firewoodCollectorTriggered = true;
+                     }
                  }
 
                  const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
@@ -2276,269 +2306,209 @@ export const useGameLogic = () => {
                      const pending = stateRef.current.gameState.pendingAction;
                      if (pending && pending.snapshot) {
                          const snap = JSON.parse(pending.snapshot);
-                         const oldFields = snap.farm.filter((x:any)=>x===2).length;
-                         const currentFields = nf.filter(x=>x===2).length;
-                         if (currentFields <= oldFields) {
-                             addLog("Must Plow a new field before Sowing!", "red");
-                             playSound('error');
-                             return pp;
+                         if (nf[tileIdx] === 2 && !content[tileIdx]) {
+                             // Sow
+                             const seed = pp.tempMode.currentSeed || 'grain';
+                             if (res[seed] > 0) {
+                                 res[seed]--;
+                                 content[tileIdx] = seed;
+                                 counts[tileIdx] = seed === 'grain' ? 3 : 2;
+                                 playSound(seed === 'grain' ? 'grain' : 'vegetables');
+                             } else {
+                                 addLog(`Not enough ${seed}`, 'red');
+                                 playSound('error');
+                             }
+                         } else if (nf[tileIdx] === 2 && content[tileIdx]) {
+                             // Undo Sow (only if not present in snapshot)
+                             if (!snap.farmContent[tileIdx]) {
+                                 const seed = content[tileIdx] as ResourceType;
+                                 res[seed]++;
+                                 content[tileIdx] = null;
+                                 counts[tileIdx] = 0;
+                                 playSound('click');
+                             }
                          }
                      }
-
-                     if (nf[tileIdx] === 2) {
-                        const seed = pp.tempMode?.currentSeed || 'grain';
-                        if (content[tileIdx]) {
-                            const pending = stateRef.current.gameState.pendingAction;
-                             if (pending && pending.snapshot) {
-                                 const snap = JSON.parse(pending.snapshot);
-                                 if (!snap.farmContent[tileIdx]) {
-                                     const type = content[tileIdx] as 'grain' | 'veg';
-                                     res[type]++;
-                                     content[tileIdx] = null;
-                                     counts[tileIdx] = 0;
-                                     playSound('click');
-                                     return { ...pp, res, farmContent: content, farmCounts: counts };
-                                 }
-                             }
-                             addLog("Field already occupied", "red");
-                             playSound('error');
-                             return pp;
-                        }
-
-                        if (res[seed] > 0) {
-                            res[seed]--;
-                            content[tileIdx] = seed;
-                            counts[tileIdx] = seed === 'grain' ? 3 : 2;
-                            playSound('plant');
-                            return { ...pp, res, farmContent: content, farmCounts: counts };
-                        } else {
-                            addLog(`No ${seed} available`, "red");
-                            playSound('error');
-                        }
-                     }
                  }
-                 return pp;
-             }
-
-             if (isSowMode && nf[tileIdx] === 2) {
-                 const seed = pp.tempMode?.currentSeed || 'grain';
-                 
-                 if (content[tileIdx]) {
-                     const pending = stateRef.current.gameState.pendingAction;
-                     if (pending && pending.snapshot) {
-                         const snap = JSON.parse(pending.snapshot);
+             } else if (isSowMode) {
+                 const pending = stateRef.current.gameState.pendingAction;
+                 if (pending && pending.snapshot) {
+                     const snap = JSON.parse(pending.snapshot);
+                     if (nf[tileIdx] === 2 && !content[tileIdx]) {
+                         // Sow
+                         const seed = pp.tempMode.currentSeed || 'grain';
+                         if (res[seed] > 0) {
+                             res[seed]--;
+                             content[tileIdx] = seed;
+                             counts[tileIdx] = seed === 'grain' ? 3 : 2;
+                             playSound(seed === 'grain' ? 'grain' : 'vegetables');
+                         } else {
+                             addLog(`Not enough ${seed}`, 'red');
+                             playSound('error');
+                         }
+                     } else if (nf[tileIdx] === 2 && content[tileIdx]) {
+                         // Undo Sow (only if not present in snapshot)
                          if (!snap.farmContent[tileIdx]) {
-                             const type = content[tileIdx] as 'grain' | 'veg';
-                             res[type]++;
+                             const seed = content[tileIdx] as ResourceType;
+                             res[seed]++;
                              content[tileIdx] = null;
                              counts[tileIdx] = 0;
                              playSound('click');
-                             return { ...pp, res, farmContent: content, farmCounts: counts };
                          }
                      }
-                     addLog("Field already occupied", "red");
-                     playSound('error');
-                     return pp;
                  }
-
-                 if (res[seed] > 0) {
-                     res[seed]--;
-                     content[tileIdx] = seed;
-                     counts[tileIdx] = seed === 'grain' ? 3 : 2;
-                     playSound('plant');
-                     return { ...pp, res, farmContent: content, farmCounts: counts };
-                 } else {
-                     addLog(`No ${seed} available`, "red");
-                     playSound('error');
-                 }
-             }
-
-             if (mode === 'build_menu') {
-                  if (nf[tileIdx] === 0) {
-                     if (pp.tempMode?.currentTool === 'room') {
-                         // Determine cost based on current house type
-                         let costRes: 'wood' | 'clay' | 'stone' = 'wood';
-                         if (pp.houseType === 'clay') costRes = 'clay';
-                         if (pp.houseType === 'stone') costRes = 'stone';
-
-                         if (res[costRes] >= 5 && res.reed >= 2) {
-                             if (!hasNeighbor(pp, tileIdx, 1) && pp.farm.some(x=>x===1)) { playSound('error'); return pp; }
-                             res[costRes] -= 5; res.reed -= 2; nf[tileIdx] = 1;
-                             playSound('build');
-                             return { ...pp, farm: nf, res };
-                         } else {
-                             addLog(`Need 5 ${costRes} and 2 reed`, 'red');
-                             playSound('error');
-                         }
-                     }
-                     else if (pp.tempMode?.currentTool === 'stable') {
-                        const currentStables = nf.filter(x => x === 5).length;
-                        if (currentStables >= LIMIT_STABLES) return pp;
-                        if (res.wood < 2) { playSound('error'); return pp; }
-                        if (currentStables > 0 && !hasNeighbor(pp, tileIdx, 5)) { playSound('error'); return pp; }
-                        res.wood -= 2; nf[tileIdx] = 5; 
-                        playSound('build');
-                        return { ...pp, farm: nf, res };
-                     }
-                 }
-             }
-             
-             if (mode === 'plow') {
+             } else if (mode === 'plow') {
                  if (nf[tileIdx] === 0) {
                      const pending = stateRef.current.gameState.pendingAction;
                      if (pending && pending.snapshot) {
                          const snap = JSON.parse(pending.snapshot);
+                         // Limit to 1 new field
                          if (nf.filter(x => x===2).length > snap.farm.filter((x:any)=>x===2).length) {
                              addLog("Can only plow 1 field", "red");
                              playSound('error');
                              return pp;
                          }
+                         // Adjacency Check
                          if (snap.farm.some((x:any)=>x===2) && !hasNeighbor({ ...pp, farm: snap.farm }, tileIdx, 2)) {
                              addLog("New fields must be adjacent", "red");
                              playSound('error');
                              return pp;
                          }
                      }
-                     nf[tileIdx] = 2; 
+                     nf[tileIdx] = 2;
                      playSound('plow');
-                     return { ...pp, farm: nf };
-                 } 
-                 else if (nf[tileIdx] === 2) {
+                 } else if (nf[tileIdx] === 2 && !content[tileIdx]) {
+                     // Undo Plow
                      const pending = stateRef.current.gameState.pendingAction;
                      if (pending && pending.snapshot) {
                          const snap = JSON.parse(pending.snapshot);
                          if (snap.farm[tileIdx] === 0) {
                              nf[tileIdx] = 0;
                              playSound('click');
-                             return { ...pp, farm: nf };
                          }
                      }
                  }
              }
+             else if (mode === 'build_menu') {
+                 if (nf[tileIdx] === 0) {
+                     const tool = pp.tempMode.currentTool || 'room';
+                     if (tool === 'room') {
+                         // Check costs
+                         let wCost = 5, rCost = 2;
+                         if (res.wood >= wCost && res.reed >= rCost) {
+                             // Check adjacency
+                             const hasRoomNeighbor = hasNeighbor(pp, tileIdx, 1);
+                             if (!hasRoomNeighbor && pp.farm.some(x => x===1)) {
+                                 addLog("Rooms must be adjacent", 'red');
+                                 playSound('error');
+                             } else {
+                                 nf[tileIdx] = 1;
+                                 res.wood -= wCost;
+                                 res.reed -= rCost;
+                                 playSound('build');
+                             }
+                         } else {
+                             addLog("Not enough resources (5 Wood, 2 Reed)", 'red');
+                             playSound('error');
+                         }
+                     } else if (tool === 'stable') {
+                         let wCost = 2;
+                         if (res.wood >= wCost) {
+                             nf[tileIdx] = 5;
+                             res.wood -= wCost;
+                             pp.stablesCount++;
+                             playSound('build');
+                         } else {
+                             addLog("Not enough resources (2 Wood)", 'red');
+                             playSound('error');
+                         }
+                     }
+                 }
+                 // Undo Logic could be added here
+             }
 
-             return pp;
+             return { ...pp, farm: nf, res, farmCounts: counts, farmContent: content };
         });
     };
 
     const handleFenceClick = (pId: number, tileIdx: number, side: 't'|'b'|'l'|'r') => {
         const p = stateRef.current.players[pId];
-        if (p.type !== 'human' || !p.tempMode) return;
-        const mode = p.tempMode.mode;
+        if (p.type !== 'human' || !p.tempMode || (p.tempMode.mode !== 'fence' && p.tempMode.mode !== 'reno_fence')) return;
         
-        if (mode !== 'fence' && mode !== 'reno_fence') return;
-
+        const key = `${tileIdx}-${side}`;
+        
         updatePlayer(pId, pp => {
-             // Normalize fence keys
-             let targetIdx = tileIdx;
-             let targetSide = side;
-
-             if (side === 'r' && tileIdx % 5 !== 4) {
-                 targetIdx = tileIdx + 1;
-                 targetSide = 'l';
-             }
-             if (side === 'b' && tileIdx < 10) {
-                 targetIdx = tileIdx + 5;
-                 targetSide = 't';
-             }
-
-             const key = `${targetIdx}-${targetSide}`;
-             const newFences = new Set(pp.fences);
-             const res = { ...pp.res };
-
-             if (newFences.has(key)) {
-                 newFences.delete(key);
-                 res.wood++;
-                 playSound('fence');
-             } else {
-                 if (res.wood > 0 && newFences.size < LIMIT_FENCES) {
-                     newFences.add(key);
-                     res.wood--;
-                     playSound('fence');
-                 } else {
-                     playSound('error');
-                 }
-             }
-             return { ...pp, fences: newFences, res };
-        });
-    };
-
-    const switchTool = (tool: 'room' | 'stable') => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
-        updatePlayer(pIdx, p => ({...p, tempMode: { ...p.tempMode!, currentTool: tool }}));
-        playSound('click');
-    };
-
-    const toggleSeed = (seed: 'grain' | 'veg') => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
-        updatePlayer(pIdx, p => ({...p, tempMode: { ...p.tempMode!, currentSeed: seed }}));
-        playSound('click');
-    };
-    
-    const setSubAction = (sub: 'plow'|'sow'|'upgrade') => {
-         const { startPlayer, turnIdx } = stateRef.current.gameState;
-         const pIdx = (startPlayer + turnIdx) % 4;
-         updatePlayer(pIdx, p => ({...p, tempMode: { ...p.tempMode!, subAction: sub }}));
-         playSound('click');
-    };
-    
-    const selectMajor = (majorId: string) => {
-        const { startPlayer, turnIdx } = stateRef.current.gameState;
-        const pIdx = (startPlayer + turnIdx) % 4;
-        updatePlayer(pIdx, p => ({
-            ...p, 
-            tempMode: { 
-                ...p.tempMode!, 
-                selectedMajorId: majorId,
-                selectedCardId: undefined // Mutually exclusive
+            const newFences = new Set(pp.fences);
+            
+            // Normalize click to single edge representation logic? 
+            // Simplified: Determine target edge based on click
+            let targetIdx = tileIdx;
+            let targetSide = side;
+            
+            if (side === 'r') {
+                if (tileIdx % 5 !== 4) { targetIdx = tileIdx + 1; targetSide = 'l'; }
+            } else if (side === 'b') {
+                if (tileIdx < 10) { targetIdx = tileIdx + 5; targetSide = 't'; }
             }
-        }));
-        playSound('click');
+            
+            const canonicalKey = `${targetIdx}-${targetSide}`;
+            
+            if (newFences.has(canonicalKey)) {
+                // Remove (Undo)
+                 const pending = stateRef.current.gameState.pendingAction;
+                 if (pending && pending.snapshot) {
+                     const snap = JSON.parse(pending.snapshot);
+                     const snapFences = new Set(snap.fences);
+                     if (!snapFences.has(canonicalKey)) {
+                         newFences.delete(canonicalKey);
+                     }
+                 }
+            } else {
+                // Add
+                if (newFences.size < LIMIT_FENCES) {
+                    newFences.add(canonicalKey);
+                    playSound('wood');
+                } else {
+                    addLog("Fence limit reached!", "red");
+                    playSound('error');
+                }
+            }
+            
+            return { ...pp, fences: newFences };
+        });
     };
 
     const renovate = () => {
         const { startPlayer, turnIdx } = stateRef.current.gameState;
         const pIdx = (startPlayer + turnIdx) % 4;
         updatePlayer(pIdx, p => {
-            const res = { ...p.res };
-            const rooms = p.farm.filter(x => x===1).length;
-            if (p.houseType === 'wood') {
-                if (res.clay >= rooms && res.reed >= 1) {
-                    res.clay -= rooms; res.reed -= 1;
-                    playSound('build');
-                    return { ...p, res, houseType: 'clay' };
-                }
-            } else if (p.houseType === 'clay') {
-                if (res.stone >= rooms && res.reed >= 1) {
-                    res.stone -= rooms; res.reed -= 1;
-                    playSound('build');
-                    return { ...p, res, houseType: 'stone' };
-                }
+            if (p.houseType === 'stone') return p;
+            
+            const rooms = p.farm.filter(x => x === 1).length;
+            const target = p.houseType === 'wood' ? 'clay' : 'stone';
+            const costRes = p.houseType === 'wood' ? 'clay' : 'stone';
+            const costAmt = rooms; // 1 per room
+            const reedCost = 1;
+            
+            // @ts-ignore
+            if (p.res[costRes] >= costAmt && p.res.reed >= reedCost) {
+                return {
+                    ...p,
+                    houseType: target,
+                    // @ts-ignore
+                    res: { ...p.res, [costRes]: p.res[costRes] - costAmt, reed: p.res.reed - reedCost }
+                };
+            } else {
+                addLog(`Need ${costAmt} ${costRes} and ${reedCost} reed`, 'red');
+                playSound('error');
+                return p;
             }
-            addLog("Not enough resources to renovate", "red");
-            playSound('error');
-            return p;
         });
-    };
-    
-    const openCardDetail = (card: Card, owner: Player) => {
-        setViewingCardState({ card, owner });
-        playSound('click');
-    };
-
-    const closeCardDetail = () => {
-        setViewingCardState(null);
-        playSound('click');
-    };
-    
-    const toggleHandView = () => {
-        setIsViewingHand(prev => !prev);
-        playSound('click');
+        playSound('build');
     };
 
     return {
-        gameState,
+        gameState: stateRef.current.gameState,
         players,
         logs,
         clickAction,
@@ -2546,14 +2516,14 @@ export const useGameLogic = () => {
         handleFarmClick,
         handleFenceClick,
         confirmModeAction,
-        switchTool,
-        toggleSeed,
-        setSubAction,
-        selectMajor,
+        switchTool: (t: 'room'|'stable') => updatePlayer((stateRef.current.gameState.startPlayer + stateRef.current.gameState.turnIdx) % 4, p => ({...p, tempMode: {...p.tempMode!, currentTool: t}})),
+        toggleSeed: (s: 'grain'|'veg') => updatePlayer((stateRef.current.gameState.startPlayer + stateRef.current.gameState.turnIdx) % 4, p => ({...p, tempMode: {...p.tempMode!, currentSeed: s}})),
+        setSubAction: (s: string|undefined) => updatePlayer((stateRef.current.gameState.startPlayer + stateRef.current.gameState.turnIdx) % 4, p => ({...p, tempMode: {...p.tempMode!, subAction: s as any}})),
+        selectMajor: (id: string) => updatePlayer((stateRef.current.gameState.startPlayer + stateRef.current.gameState.turnIdx) % 4, p => ({...p, tempMode: {...p.tempMode!, selectedMajorId: id, selectedCardId: undefined}})),
         renovate,
-        viewingCardState, // Updated export
-        openCardDetail,
-        closeCardDetail,
+        viewingCardState,
+        openCardDetail: (card: Card, owner: Player) => setViewingCardState({card, owner}),
+        closeCardDetail: () => setViewingCardState(null),
         adjustHarvest,
         resetHarvest,
         confirmHarvest,
@@ -2573,10 +2543,9 @@ export const useGameLogic = () => {
         resetOverflow,
         confirmFeedPhase,
         resetFeed,
-        playCard: selectCardForPlay, // Renamed export to match intended use, but kept hook return consistent
-        passCardPlay,
         selectCardForPlay,
-        toggleHandView,
+        passCardPlay,
+        toggleHandView: () => setIsViewingHand(prev => !prev),
         isViewingHand,
         resolveCardChoice,
         debug,

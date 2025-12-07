@@ -1,5 +1,4 @@
 
-
 import { Action, Card } from "./types";
 
 export const LIMIT_FENCES = 15;
@@ -34,7 +33,7 @@ export const DB_MAJORS: Card[] = [
 export const DB_OCCUPATIONS: Card[] = [
     { id: 'o_caiguren', name: '采菇人', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿木头积累格后: 可选择将1木变2食(放回木头)' },
     { id: 'o_cangkukanshouyuan', name: '仓库看守员', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿资源市场: 可额外选择+1砖或+1麦' },
-    { id: 'o_chaihuoshiqugong', name: '柴火拾取工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '犁/播/麦: +1木' },
+    { id: 'o_chaihuoshiqugong', name: '柴火拾取工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '犁/播/麦: 回合结束时获得1木头(限1次)' },
     { id: 'o_chuiniudawang', name: '吹牛大王', type: 'occupation', cost: { food: 1 }, score: 0, desc: '终局: 5/6/7/8/9/10张卡 -> 2/3/4/5/7/9分', effect: { type: 'end_game' } },
     { id: 'o_daoshi', name: '导师', type: 'occupation', cost: { food: 1 }, score: 0, desc: '打出后: 每张后续职业+1分', effect: { type: 'end_game' } },
     { id: 'o_diannong', name: '佃农', type: 'occupation', cost: { food: 1 }, score: 0, desc: '临时工: 可建房/翻修 (模拟: +1木+1砖)' },
@@ -72,7 +71,7 @@ export const BASE_ACTIONS: Action[] = [
 
 export const ROUND_CARDS_POOL: Action[] = [
   { id: 'r_sheep', name: '🐑 牧羊 (1羊)', acc: 1, cur: 1, type: 'res', res: 'sheep', stage: 1 },
-  { id: 'r_sow', name: '🌱 播种/烤面包', type: 'special', mode: 'sow', stage: 1 },
+  { id: 'r_sow', name: '🌱 播种/烤面包', type: 'special', mode: 'sow_bake_choice', stage: 1 },
   { id: 'r_fences', name: '🚧 栅栏', type: 'special', mode: 'fence', stage: 1 },
   { id: 'r_major', name: '🏗️ 发展卡', type: 'special', mode: 'major', stage: 1 },
   { id: 'r_stone', name: '🪨 西部采石 (1石)', acc: 1, cur: 1, type: 'res', res: 'stone', stage: 2 },
