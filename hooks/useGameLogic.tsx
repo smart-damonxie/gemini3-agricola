@@ -157,6 +157,13 @@ export const useGameLogic = () => {
         
         if (gs.gameOver || gs.harvestPhase || gs.turnPhase === 'overflow') return;
         
+        // Prevent action if there is a pending action (e.g. waiting for confirmation)
+        if (gs.pendingAction) {
+             addLog("Please confirm current action first", "red");
+             playSound('error');
+             return;
+        }
+        
         const pIdx = (gs.startPlayer + gs.turnIdx) % 4;
         const p = ps[pIdx];
 
