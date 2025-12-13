@@ -1,5 +1,4 @@
 
-
 import React from 'react';
 import { Action, Player, ResourceType } from '../types';
 
@@ -58,8 +57,8 @@ const ActionSlot: React.FC<Props> = ({ action, occupiedBy, onClick, isFuture, fu
           : 'bg-stone-200 border-stone-400 text-stone-900 hover:bg-white hover:-translate-y-0.5 hover:border-yellow-500 cursor-pointer active:translate-y-0'}
       `}
     >
-      {/* Accumulation Badge */}
-      {action.acc && action.cur !== undefined && !occupiedBy && (
+      {/* Accumulation Badge - Show if resources exist OR if accumulation is active and not taken */}
+      {action.acc && action.cur !== undefined && (action.cur > 0 || !occupiedBy) && (
         <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-white shadow-sm z-10">
           {action.cur}
         </div>

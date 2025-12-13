@@ -1,4 +1,5 @@
 
+
 import { Action, Card } from "./types";
 
 export const LIMIT_FENCES = 15;
@@ -41,6 +42,18 @@ export const DB_OCCUPATIONS: Card[] = [
     { id: 'o_dongwujiaoyiyuan', name: '动物交易员', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿羊/猪/牛积累: 1食买1只' },
     { id: 'o_famugong', name: '伐木工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿木头积累: +1木', effect: { type: 'passive_res', trigger: 'wood', amount: 1 } },
     { id: 'o_fangwuguanjia', name: '房屋管家', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时: 剩轮数送木. 终局: 最多房3分', effect: { type: 'immediate' } },
+    
+    // New cards
+    { id: 'o_gemaigong', name: '格麦工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时+1麦. 收获时每块麦田多收1麦', effect: { type: 'immediate', bonus: 'grain', amount: 1 } },
+    { id: 'o_gengzhongbangshou', name: '耕种帮手', type: 'occupation', cost: { food: 1 }, score: 0, desc: '使用临时工行动时, 能额外犁一块田' },
+    { id: 'o_guwen', name: '顾问', type: 'occupation', cost: { food: 1 }, score: 0, desc: '打出时: 1/2/3/4人局获得2麦/3砖/2苇/2羊' },
+    { id: 'o_jianzhufuyuanshi', name: '建筑复原师', type: 'occupation', cost: { food: 1 }, score: 0, desc: '翻修时, 可跳过砖屋, 直接将木屋翻修成石屋' },
+    { id: 'o_jijiegong', name: '季节工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '临时工: +1麦. 第6回合起改为+1菜或+1麦' },
+    { id: 'o_mafu', name: '马夫', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时+1木. 住石屋后每回合可花1木建1马厩', effect: { type: 'immediate', bonus: 'wood', amount: 1 } },
+    { id: 'o_majiujianzaoshi', name: '马厩建造师', type: 'occupation', cost: { food: 1 }, score: 0, desc: '终局: 农场上每个未被栅栏围住的马厩+1分', effect: { type: 'end_game' } },
+    { id: 'o_maopifanggong', name: '毛皮纺工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '每当你扩建至少1间砖屋或将砖屋翻修成石屋时, 获得3食物' },
+    { id: 'o_mengyouzhe', name: '梦游者', type: 'occupation', cost: { food: 1 }, score: 0, desc: '随时: 将1羊换成1猪或1菜或1石' },
+    { id: 'o_moshushi', name: '魔术师', type: 'occupation', cost: { food: 1 }, score: 0, desc: '卖艺: 额外获得1木和1麦' },
 ];
 
 export const DB_MINORS: Card[] = [

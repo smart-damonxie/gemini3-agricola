@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Player, Allocation, Card, ResourceType } from '../types';
 import FarmTile from './FarmTile';
@@ -18,7 +19,7 @@ interface Props {
   onDiscard?: (type: 'sheep'|'boar'|'cow') => void;
   onCook?: (type: 'sheep'|'boar'|'cow') => void;
   onConfirmOverflow?: () => void;
-  onResetOverflow?: () => void;
+  onResetManagement?: () => void; // Renamed for clarity
   onViewHand?: () => void;
 }
 
@@ -31,16 +32,10 @@ const resIcon = (icon: string, val: number, color: string = "bg-gray-200") => (
 const PlayerPanel: React.FC<Props> = ({ 
     player, isActive, isNextStart, 
     onFarmClick, onFenceClick, onMajorClick, onConvertClick, onAdjustClick,
-    isOverflowing, onDiscard, onCook, onConfirmOverflow, onResetOverflow, onViewHand
+    isOverflowing, onDiscard, onCook, onConfirmOverflow, onResetManagement, onViewHand
 }) => {
   const allocation = calculateAllocation(player);
-  // Score is approximate here as we don't have access to allPlayers context easily without prop drilling
-  // But for simple display it is fine. House Steward logic needs comparison which won't show perfectly here unless we update props.
-  // For consistency, we might just show base score. Or we accept that comparison cards only calc correctly at end game modal.
-  // However, the prompt asked to fix it. Let's assume we can't easily pass allPlayers here without changing App.tsx signature for every panel.
-  // Wait, we can pass it if we want. But for now, let's keep it simple or minimal.
-  const score = calculateScore(player); // This will be local score only.
-  
+  const score = calculateScore(player); 
   const layout = analyzeFarmLayout(player);
 
   const remainingFences = LIMIT_FENCES - player.fences.size;
@@ -92,26 +87,27 @@ const PlayerPanel: React.FC<Props> = ({
       return rate;
   };
 
-  // Food Requirement Calculation
   const foodRequired = (player.res.maxWorkers - player.newbornCount) * 2 + player.newbornCount * 1;
   const foodStatusColor = player.res.food >= foodRequired ? 'text-green-400' : 'text-red-400';
   
-  // Combine all played cards for display
   const allPlayedCards = [...player.majors, ...player.playedCards];
 
   return (
     <div 
       className={`
-        p-3 rounded-lg border-l-[6px] transition-all duration-200 shadow-md relative
-        ${isActive ? 'bg-slate-600 scale-[1.01] shadow-xl z-10 border-white' : 'bg-slate-700 border-gray-400 opacity-90'}
-        ${isOverflowing ? 'ring-2 ring-red-500 animate-pulse' : ''}
+        p-3 rounded-lg border-l-[6px] transition-all duration-300 shadow-md relative
+        ${isActive 
+            ? 'bg-slate-600 scale-[1.02] shadow-2xl z-20 border-yellow-400 ring-2 ring-yellow-500/50' 
+            : 'bg-slate-700 border-gray-400 opacity-90 hover:opacity-100'}
+        ${isOverflowing ? 'ring-4 ring-red-500 animate-pulse' : ''}
       `}
     >
       {/* HEADER */}
       <div className="flex justify-between items-center mb-2 pb-1 border-b border-white/10">
         <div className="flex items-center flex-wrap gap-y-1" style={{ color: player.color }}>
-          <span className="font-bold text-lg mr-2">{player.name}</span>
+          <span className="font-bold text-lg mr-2 drop-shadow-sm">{player.name}</span>
           {isNextStart && <span className="mr-2 text-sm" title="Starting Player">🚩</span>}
+          {isActive && <span className="mr-2 text-xs bg-yellow-500/20 text-yellow-200 px-1 rounded animate-pulse">ACTIVE</span>}
           
           <div className="flex gap-1.5 items-center">
               {/* Worker Count */}
@@ -166,14 +162,14 @@ const PlayerPanel: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* OVERFLOW WARNING SECTION */}
+      {/* OVERFLOW WARNING SECTION (Visible only if overflow > 0) */}
       {isOverflowing && allocation.overflow > 0 && (
           <div className="bg-red-900/80 border border-red-500 p-2 rounded mb-2 flex flex-col gap-1 animate-bounce-short">
               <div className="flex justify-between items-center mb-1">
                   <span className="text-xs font-bold text-white">⚠️ Overflow! Manage Animals:</span>
-                  {onResetOverflow && (
-                      <button onClick={onResetOverflow} className="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-0.5 rounded border border-slate-500 text-white">
-                          ↩ Undo
+                  {onResetManagement && (
+                      <button onClick={onResetManagement} className="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-0.5 rounded border border-slate-500 text-white" title="Shuffle animals within pens">
+                          ↩ Reset Pens
                       </button>
                   )}
               </div>
@@ -202,20 +198,6 @@ const PlayerPanel: React.FC<Props> = ({
           </div>
       )}
       
-      {isOverflowing && allocation.overflow === 0 && (
-          <div className="bg-green-900/80 border border-green-500 p-2 rounded mb-2 flex justify-between items-center">
-              <span className="text-green-100 text-xs">Overflow Resolved.</span>
-              <div className="flex gap-2">
-                  {onResetOverflow && (
-                      <button onClick={onResetOverflow} className="text-[10px] bg-slate-700 hover:bg-slate-600 px-2 py-0.5 rounded border border-slate-500 text-white">
-                          ↩ Undo
-                      </button>
-                  )}
-                  <button onClick={onConfirmOverflow} className="px-3 py-0.5 bg-green-600 hover:bg-green-500 rounded text-xs font-bold text-white">End Turn</button>
-              </div>
-          </div>
-      )}
-
       {/* RESOURCES (Food Removed) */}
       <div className="flex flex-wrap gap-1 mb-1 text-sm">
         {resIcon('🪵', player.res.wood, 'bg-[#a1887f]')}
@@ -265,11 +247,10 @@ const PlayerPanel: React.FC<Props> = ({
               <div className="flex flex-wrap gap-1 content-start">
                   {allPlayedCards.length === 0 && <span className="text-[10px] text-gray-600 italic">None</span>}
                   {allPlayedCards.map((c, idx) => {
-                      // IMPROVED CONTRAST COLORS
                       let bgClass = 'bg-stone-600 border-stone-400 text-white';
                       if (c.type === 'major') bgClass = 'bg-orange-700 border-orange-400 text-white';
-                      else if (c.type === 'occupation') bgClass = 'bg-yellow-500 border-yellow-700 text-stone-900 font-bold'; // Dark text on yellow
-                      else if (c.type === 'minor') bgClass = 'bg-orange-400 border-orange-600 text-stone-900 font-bold'; // Dark text on orange
+                      else if (c.type === 'occupation') bgClass = 'bg-yellow-500 border-yellow-700 text-stone-900 font-bold'; 
+                      else if (c.type === 'minor') bgClass = 'bg-orange-400 border-orange-600 text-stone-900 font-bold'; 
 
                       return (
                           <div key={`${c.id}-${idx}`} onClick={() => onMajorClick && onMajorClick(c, player)} className={`relative w-8 h-10 border rounded-sm text-[10px] flex flex-col items-center justify-center cursor-help hover:scale-110 transition-transform shadow-sm leading-none text-center ${bgClass}`} title={c.name}>

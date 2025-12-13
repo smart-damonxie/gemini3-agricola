@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -17,6 +19,7 @@ import { Player, Card } from './types';
 const App: React.FC = () => {
   const { 
     gameState, 
+    gamePhase,
     players, 
     logs, 
     clickAction, 
@@ -42,13 +45,15 @@ const App: React.FC = () => {
     toggleAnimalManager,
     saveAnimalAssignment,
     startGame,
+    resetGame,
     adjustBake,
     discardAnimal,
     cookOverflow,
     cookFromManager,
     discardFromManager,
     confirmOverflowEndTurn,
-    resetOverflow,
+    resetOverflowManagement,
+    cancelTurnAction, // Full Undo Action
     confirmFeedPhase,
     resetFeed,
     selectCardForPlay, // New name
@@ -100,9 +105,14 @@ const App: React.FC = () => {
   const isConverting = activePlayer.type === 'human' && activePlayer.conversionTemp;
   const isHumanTurn = activePlayer.type === 'human' && !gameState.harvestPhase;
   const actionDetails = activePlayer.tempMode ? getActionDetails(activePlayer.tempMode.actId) : null;
-  const humanPlayer = players.find(p => p.type === 'human');
+  // REMOVED: const humanPlayer = players.find(p => p.type === 'human'); - Use activePlayer check instead
   const hasBaker = activePlayer.majors.some(m => m.bakeRate || m.specialBake);
   const isFeedPhase = gameState.harvestSubPhase === 'feed' && activePlayer.type === 'human';
+
+  // Check if Overflow is Resolved for Human Player (Overflow = 0 during Overflow Phase)
+  const isOverflowResolved = gameState.turnPhase === 'overflow' && 
+                             activePlayer.type === 'human' && 
+                             calculateAllocation(activePlayer).overflow === 0;
 
   // Determine if we are currently selecting a major
   const isSelectingMajor = activePlayer?.type === 'human' && 
@@ -173,8 +183,9 @@ const App: React.FC = () => {
 
   // Prepare cards for HandModal with dynamic cost applied visually
   const getHandCardsWithCost = (): Card[] => {
-      if (isViewingHand && humanPlayer) {
-          return humanPlayer.hand;
+      // In 4 player mode, ensure we show the ACTIVE player's hand if viewing
+      if (isViewingHand && activePlayer.type === 'human') {
+          return activePlayer.hand;
       }
 
       if (!activePlayer.tempMode) return [];
@@ -211,7 +222,7 @@ const App: React.FC = () => {
   const handCardsToDisplay = getHandCardsWithCost();
   let handModalTitle = "Select a Card";
   if (isViewingHand) {
-      handModalTitle = "Your Hand";
+      handModalTitle = `${activePlayer.name}'s Hand`;
   } else if (activePlayer.tempMode?.mode === 'play_occupation') {
       const actId = activePlayer.tempMode.actId;
       const cost = (actId === 'act_occupation2' && activePlayer.playedCards.filter(c => c.type === 'occupation').length >= 2) ? 2 : 1;
@@ -309,10 +320,42 @@ const App: React.FC = () => {
   // Card Choice States
   const isCaigurenChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_caiguren';
   const isKeeperChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_keeper';
+  const isTenantChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_tenant';
+  const isAnimalDealerChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_animal_dealer';
 
   return (
     <div className="min-h-screen bg-stone-900 text-stone-200 font-sans selection:bg-yellow-500/30 overflow-x-hidden">
       
+      {/* START SCREEN */}
+      {gamePhase === 'setup' && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center bg-stone-900 bg-[url('https://www.transparenttextures.com/patterns/wood-pattern.png')]">
+              <div className="bg-stone-800 border-4 border-yellow-600 rounded-2xl p-10 max-w-lg w-full shadow-2xl flex flex-col items-center gap-8 animate-fadeIn">
+                  <h1 className="text-5xl font-bold text-yellow-500 tracking-tight drop-shadow-md text-center">Agricola Lite</h1>
+                  <p className="text-stone-400 text-center">Select your game mode to begin farming.</p>
+                  
+                  <div className="flex flex-col gap-4 w-full">
+                      <button 
+                          onClick={() => startGame('single')}
+                          className="flex flex-col items-center p-4 bg-stone-700 hover:bg-stone-600 border-2 border-stone-500 hover:border-blue-400 rounded-xl transition-all group"
+                      >
+                          <span className="text-xl font-bold text-white group-hover:text-blue-300">Single Player</span>
+                          <span className="text-sm text-stone-400 group-hover:text-stone-300">1 Human vs 3 AI Opponents</span>
+                      </button>
+
+                      <button 
+                          onClick={() => startGame('multi')}
+                          className="flex flex-col items-center p-4 bg-stone-700 hover:bg-stone-600 border-2 border-stone-500 hover:border-green-400 rounded-xl transition-all group"
+                      >
+                          <span className="text-xl font-bold text-white group-hover:text-green-300">4 Player Hotseat</span>
+                          <span className="text-sm text-stone-400 group-hover:text-stone-300">Local Multiplayer (Pass & Play)</span>
+                      </button>
+                  </div>
+
+                  <div className="text-xs text-stone-500 mt-4">v1.5.0 - New Cards & Confirm Mode</div>
+              </div>
+          </div>
+      )}
+
       {/* HEADER */}
       <header className="bg-stone-800 border-b border-stone-700 p-2 shadow-lg sticky top-0 z-50 h-[64px]">
         <div className="max-w-7xl mx-auto flex items-center justify-between h-full relative">
@@ -325,6 +368,7 @@ const App: React.FC = () => {
 
           {/* RIGHT: Action Interaction Overlay (In-flow to push left content) */}
           <div className="flex items-center gap-4 ml-auto">
+            {/* 1. Standard Action Mode UI */}
             {activePlayer.tempMode && activePlayer.type === 'human' && (
                 <div className="animate-fadeIn">
                     <div className="bg-stone-800/95 border-2 border-yellow-600 px-4 py-1 shadow-2xl rounded-[30px] flex items-center gap-3 backdrop-blur-sm">
@@ -336,17 +380,21 @@ const App: React.FC = () => {
                             activePlayer.tempMode.mode === 'bake_immediate' ? 'Bake' :
                             activePlayer.tempMode.mode === 'plow_sow' ? 'Plow + Sow' :
                             activePlayer.tempMode.mode === 'simple' ? 'Confirm?' :
+                            activePlayer.tempMode.mode === 'turn_confirmation' ? 'Action Completed' :
                             activePlayer.tempMode.mode === 'play_occupation' ? 'Playing Occupation' :
                             activePlayer.tempMode.mode === 'play_minor_optional' ? 'Start Player' :
                             activePlayer.tempMode.mode === 'choice_caiguren' ? 'Card Effect' :
                             activePlayer.tempMode.mode === 'choice_keeper' ? 'Card Effect' :
+                            activePlayer.tempMode.mode === 'choice_tenant' ? 'Card Effect' :
+                            activePlayer.tempMode.mode === 'choice_animal_dealer' ? 'Card Effect' :
+                            activePlayer.tempMode.mode === 'tenant_build_room' ? 'Extra Build Room' :
                             actionDetails?.name || activePlayer.tempMode.mode}
                         </span>
                     </div>
 
                     <div className="flex items-center gap-2">
                         {/* Choice Modes */}
-                        {(isCaigurenChoice || isKeeperChoice) ? (
+                        {(isCaigurenChoice || isKeeperChoice || isTenantChoice || isAnimalDealerChoice) ? (
                             <span className="text-xs text-yellow-400 font-bold animate-pulse">Waiting for decision...</span>
                         ) : (
                         /* If in a card selection mode, controls are in modal, except cancel */
@@ -395,6 +443,12 @@ const App: React.FC = () => {
                                         >
                                             🏚️ Stable
                                         </button>
+                                    </div>
+                                )}
+                                
+                                {activePlayer.tempMode.mode === 'tenant_build_room' && (
+                                    <div className="text-[10px] text-blue-200 bg-blue-900/40 px-2 py-0.5 rounded border border-blue-600">
+                                        Select an empty space adjacent to a room. Cost: 5 Wood, 2 Reed. (Max 1)
                                     </div>
                                 )}
 
@@ -597,24 +651,76 @@ const App: React.FC = () => {
                                 )}
                                 
                                 <div className="h-4 w-px bg-stone-600 mx-1"></div>
-
-                                <button 
-                                    onClick={cancelMode} 
-                                    className="px-3 py-1 bg-stone-700 hover:bg-stone-600 text-stone-300 rounded-full font-bold transition-colors text-[10px] uppercase tracking-wide"
-                                >
-                                    Cancel
-                                </button>
-                                <button 
-                                    onClick={() => confirmModeAction(activePlayer.id)} 
-                                    className="px-4 py-1 bg-green-600 hover:bg-green-500 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition-all text-[10px] uppercase tracking-wide"
-                                >
-                                    Confirm
-                                </button>
+                                
+                                {activePlayer.tempMode.mode === 'turn_confirmation' ? (
+                                    <>
+                                        <div className="text-xs text-yellow-400 font-bold mr-1">Confirm Action?</div>
+                                        <button 
+                                            onClick={cancelMode} 
+                                            className="px-3 py-1 bg-stone-700 hover:bg-stone-600 text-stone-300 rounded-full font-bold transition-colors text-[10px] uppercase tracking-wide"
+                                        >
+                                            Undo
+                                        </button>
+                                        <button 
+                                            onClick={() => confirmModeAction(activePlayer.id)} 
+                                            className="px-4 py-1 bg-green-600 hover:bg-green-500 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition-all text-[10px] uppercase tracking-wide"
+                                        >
+                                            Confirm
+                                        </button>
+                                    </>
+                                ) : (
+                                    <>
+                                        <button 
+                                            onClick={cancelMode} 
+                                            className="px-3 py-1 bg-stone-700 hover:bg-stone-600 text-stone-300 rounded-full font-bold transition-colors text-[10px] uppercase tracking-wide"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button 
+                                            onClick={() => confirmModeAction(activePlayer.id)} 
+                                            className="px-4 py-1 bg-green-600 hover:bg-green-500 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition-all text-[10px] uppercase tracking-wide"
+                                        >
+                                            Confirm
+                                        </button>
+                                    </>
+                                )}
                             </>
                         )}
                         )}
                     </div>
                 </div>
+                </div>
+            )}
+
+            {/* 2. Overflow Management UI */}
+            {gameState.turnPhase === 'overflow' && activePlayer.type === 'human' && (
+                <div className="animate-fadeIn">
+                     <div className="bg-stone-800/95 border-2 border-green-600 px-4 py-1 shadow-2xl rounded-[30px] flex items-center gap-3 backdrop-blur-sm">
+                         <div className="flex flex-col border-r border-stone-600 pr-3">
+                            <span className="text-[8px] text-green-500 uppercase font-bold tracking-wider leading-none">Overflow</span>
+                            <span className="text-xs font-bold text-white whitespace-nowrap">
+                                {isOverflowResolved ? 'Resolved!' : 'Manage Animals'}
+                            </span>
+                         </div>
+                         <div className="flex items-center gap-2">
+                             <button 
+                                onClick={cancelTurnAction} // Calls Full Undo
+                                disabled={!gameState.pendingAction} // Disable if no action to undo
+                                className={`px-3 py-1 bg-red-900/50 hover:bg-red-800 text-red-200 border border-red-800 rounded-full font-bold transition-colors text-[10px] uppercase tracking-wide ${!gameState.pendingAction ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                title="Undo current action and re-dispatch worker"
+                             >
+                                 Undo Action
+                             </button>
+                             {isOverflowResolved && (
+                                 <button 
+                                    onClick={confirmOverflowEndTurn} 
+                                    className="px-4 py-1 bg-green-600 hover:bg-green-500 text-white rounded-full font-bold shadow-lg transform hover:scale-105 transition-all text-[10px] uppercase tracking-wide"
+                                 >
+                                    Confirm
+                                 </button>
+                             )}
+                         </div>
+                     </div>
                 </div>
             )}
 
@@ -638,7 +744,7 @@ const App: React.FC = () => {
                     🧪
                 </button>
                 <div className="w-px h-4 bg-stone-700"></div>
-                <button onClick={startGame} className="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors" title="Restart Game">
+                <button onClick={resetGame} className="w-8 h-8 rounded-full flex items-center justify-center text-red-400 hover:bg-red-900/30 hover:text-red-300 transition-colors" title="Restart Game">
                     🔄
                 </button>
             </div>
@@ -757,7 +863,7 @@ const App: React.FC = () => {
                isActive={activePlayer.id === p.id}
                isNextStart={gameState.nextStartPlayer === p.id}
                onFarmClick={(tileIdx) => handleFarmClick(p.id, tileIdx)}
-               onFenceClick={p.id === humanPlayer?.id ? (tileIdx, side) => handleFenceClick(p.id, tileIdx, side) : undefined}
+               onFenceClick={p.type === 'human' && p.id === activePlayer.id ? (tileIdx, side) => handleFenceClick(p.id, tileIdx, side) : undefined}
                onMajorClick={(m, owner) => openCardDetail(m, owner)}
                onConvertClick={() => toggleConversion()}
                onAdjustClick={p.type === 'human' ? toggleAnimalManager : undefined}
@@ -765,8 +871,8 @@ const App: React.FC = () => {
                onDiscard={p.type === 'human' ? discardAnimal : undefined}
                onCook={p.type === 'human' ? cookOverflow : undefined}
                onConfirmOverflow={p.type === 'human' ? confirmOverflowEndTurn : undefined}
-               onResetOverflow={p.type === 'human' ? resetOverflow : undefined}
-               onViewHand={p.id === humanPlayer?.id ? toggleHandView : undefined}
+               onResetManagement={p.type === 'human' ? resetOverflowManagement : undefined}
+               onViewHand={p.type === 'human' && p.id === activePlayer.id ? toggleHandView : undefined}
              />
            ))}
         </div>
@@ -783,16 +889,16 @@ const App: React.FC = () => {
           />
       )}
       <TestPanel isOpen={isTestMode} onClose={() => setIsTestMode(false)} gameState={gameState} players={players} debug={debug} />
-      {gameState.gameOver && <GameOverModal players={players} onRestart={startGame} />}
+      {gameState.gameOver && <GameOverModal players={players} onRestart={resetGame} />}
 
-      {isAdjustingAnimals && humanPlayer && (
+      {isAdjustingAnimals && activePlayer.type === 'human' && (
           <AnimalManager 
-              player={humanPlayer} 
+              player={activePlayer} 
               onClose={toggleAnimalManager} 
-              onSave={(assignments) => saveAnimalAssignment(humanPlayer.id, assignments)} 
+              onSave={(assignments) => saveAnimalAssignment(activePlayer.id, assignments)} 
               onCook={cookFromManager}
               onDiscard={discardFromManager}
-              pendingBreeding={humanPlayer.pendingBreeding || undefined}
+              pendingBreeding={activePlayer.pendingBreeding || undefined}
               playSound={playSound}
           />
       )}
@@ -810,32 +916,55 @@ const App: React.FC = () => {
           />
       )}
       
-      {/* CHOICE MODAL FOR CAIGUREN / KEEPER */}
-      {(isCaigurenChoice || isKeeperChoice) && (
+      {/* CHOICE MODAL FOR CAIGUREN / KEEPER / TENANT / ANIMAL DEALER */}
+      {(isCaigurenChoice || isKeeperChoice || isTenantChoice || isAnimalDealerChoice) && (
            <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fadeIn">
                <div className="bg-stone-900 border-4 border-yellow-600 rounded-xl p-8 max-w-sm w-full flex flex-col items-center gap-6 shadow-2xl relative">
                    <h2 className="text-2xl font-bold text-yellow-400 text-center">
-                       {isCaigurenChoice ? "Purchaser Effect" : "Storehouse Keeper Bonus"}
+                       {isCaigurenChoice ? "Purchaser Effect" : isKeeperChoice ? "Storehouse Keeper Bonus" : isAnimalDealerChoice ? "Animal Dealer" : "Tenant Farmer"}
                    </h2>
                    
                    <p className="text-stone-300 text-center">
                        {isCaigurenChoice 
                             ? "Convert 1 Wood into 2 Food?" 
-                            : "Choose your bonus resource:"}
+                            : isKeeperChoice ? "Choose your bonus resource:" 
+                            : isAnimalDealerChoice ? "Pay 1 Food to get 1 extra animal?"
+                            : "Choose an extra action to perform:"}
                    </p>
                    
-                   <div className="flex gap-4">
+                   <div className="flex flex-col gap-3 w-full">
                        {isCaigurenChoice && (
-                           <>
+                           <div className="flex gap-4 justify-center">
                                <button onClick={() => resolveCardChoice('no')} className="px-6 py-2 bg-stone-700 hover:bg-stone-600 text-white rounded font-bold uppercase">No</button>
                                <button onClick={() => resolveCardChoice('yes')} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold uppercase shadow-lg">Yes (+2 Food)</button>
-                           </>
+                           </div>
+                       )}
+                       {isAnimalDealerChoice && (
+                           <div className="flex gap-4 justify-center">
+                               <button onClick={() => resolveCardChoice('no')} className="px-6 py-2 bg-stone-700 hover:bg-stone-600 text-white rounded font-bold uppercase">No</button>
+                               <button onClick={() => resolveCardChoice('yes')} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold uppercase shadow-lg">Yes (-1 Food)</button>
+                           </div>
                        )}
                        {isKeeperChoice && (
-                           <>
+                           <div className="flex gap-4 justify-center">
                                <button onClick={() => resolveCardChoice('clay')} className="px-6 py-2 bg-orange-700 hover:bg-orange-600 text-white rounded font-bold uppercase shadow-lg border border-orange-500">+1 Clay</button>
                                <button onClick={() => resolveCardChoice('grain')} className="px-6 py-2 bg-yellow-600 hover:bg-yellow-500 text-white rounded font-bold uppercase shadow-lg border border-yellow-400">+1 Grain</button>
-                           </>
+                           </div>
+                       )}
+                       {isTenantChoice && (
+                           <div className="flex flex-col gap-3 w-full">
+                               <button onClick={() => resolveCardChoice('build')} className="px-6 py-3 bg-blue-700 hover:bg-blue-600 text-white rounded font-bold uppercase shadow-lg border border-blue-500 flex justify-between items-center">
+                                   <span>Build 1 Room</span>
+                                   <span className="text-xs bg-black/30 px-2 py-0.5 rounded">5 Wood, 2 Reed</span>
+                               </button>
+                               <button onClick={() => resolveCardChoice('renovate')} className="px-6 py-3 bg-purple-700 hover:bg-purple-600 text-white rounded font-bold uppercase shadow-lg border border-purple-500 flex justify-between items-center">
+                                   <span>Renovate</span>
+                                   <span className="text-xs bg-black/30 px-2 py-0.5 rounded">Std Cost</span>
+                               </button>
+                               <button onClick={() => resolveCardChoice('no')} className="px-6 py-2 bg-stone-700 hover:bg-stone-600 text-stone-300 rounded font-bold uppercase mt-2">
+                                   No Thanks
+                               </button>
+                           </div>
                        )}
                    </div>
                </div>
