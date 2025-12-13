@@ -1,4 +1,5 @@
 
+
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Player, GameState, Action, LogEntry, MajorCard, HarvestConversion, ResourceType, Card } from '../types';
 import { BASE_ACTIONS, DB_MAJORS, DB_OCCUPATIONS, DB_MINORS, HARVEST_ROUNDS, MAX_ROUNDS, ROUND_CARDS_POOL, LIMIT_STABLES, LIMIT_FENCES } from '../constants';
@@ -313,6 +314,23 @@ export const useGameLogic = () => {
                     addLog(`${p.name} got +1 Wood/Grain (Magician)`, p.color);
                 }
 
+                // NEW: Canoe (minor_dumuzhou) - Fish -> +1 Food +1 Reed
+                if (act.id === 'act_fish' && newP.playedCards.some(c => c.id === 'minor_dumuzhou')) {
+                    newP.res.food += 1;
+                    newP.res.reed += 1;
+                    // FIX: Update Stats for Canoe
+                    newP.playedCards = newP.playedCards.map(c => c.id === 'minor_dumuzhou' ? updateCardStat(updateCardStat(c, 'food', 1), 'reed', 1) : c);
+                    addLog(`${p.name} got +1 Food/Reed (Canoe)`, p.color);
+                }
+
+                // NEW: Grain Shovel (minor_guwuchan) - Grain Seed -> +1 Grain
+                if (act.id === 'act_grain' && newP.playedCards.some(c => c.id === 'minor_guwuchan')) {
+                    newP.res.grain += 1;
+                    // FIX: Update Stats for Grain Shovel
+                    newP.playedCards = newP.playedCards.map(c => c.id === 'minor_guwuchan' ? updateCardStat(c, 'grain', 1) : c);
+                    addLog(`${p.name} got +1 Grain (Grain Shovel)`, p.color);
+                }
+
                 // Purchaser (Human Choice)
                 if (p.type === 'human' && act.res === 'wood' && act.acc && newP.playedCards.some(c => c.id === 'o_caiguren') && newP.res.wood >= 1) {
                      newP.tempMode = { mode: 'choice_caiguren', actId: act.id };
@@ -348,10 +366,18 @@ export const useGameLogic = () => {
 
                 // Plow Helper (o_gengzhongbangshou)
                 if (act.id === 'act_labor' && newP.playedCards.some(c => c.id === 'o_gengzhongbangshou')) {
-                    // Transition to plow mode!
-                    newP.tempMode = { mode: 'plow', actId: act.id };
-                    shouldPauseForConfirmation = true; // Wait for plow
-                    addLog(`${p.name} can plow a field (Plow Helper)`, p.color);
+                    // Transition to plow choice mode!
+                    newP.tempMode = { mode: 'choice_plow_helper', actId: act.id };
+                    shouldPauseForConfirmation = true; 
+                    addLog(`${p.name} can choose to plow a field (Plow Helper)`, p.color);
+                }
+
+                // NEW: Threshing Board (minor_daguban) - Plow or Laborer/Plow -> Bake (Currently Laborer doesn't trigger it unless it's Plow Helper path which is Plow, but card says Plow/Sow action slot)
+                // Actually the card says: "Use Plow or Grain Farming (Plow+Sow) action slots".
+                // Laborer with Plow Helper is technically using Laborer slot, so might not apply, but for fun let's allow it if we consider 'plow' mode?
+                // Strict reading: "Action Slots". So 'act_plow', 'r_plow_sow'.
+                if ((act.id === 'act_plow') && newP.playedCards.some(c => c.id === 'minor_daguban')) {
+                    // Handled below in special triggers
                 }
 
                 needsResetAccumulation = true;
@@ -383,6 +409,14 @@ export const useGameLogic = () => {
                  newP.tempMode = { mode: 'choice_tenant', actId: act.id };
                  shouldPauseForConfirmation = true;
             }
+        }
+
+        // Special Actions Triggers (like Threshing Board)
+        // NEW: Threshing Board (minor_daguban) check
+        if ((act.id === 'act_plow' || act.mode === 'plow_sow') && newP.playedCards.some(c => c.id === 'minor_daguban')) {
+             if (newP.tempMode) {
+                 newP.tempMode = { ...newP.tempMode, bakeEnabled: true };
+             }
         }
 
         newP.res.workers--;
@@ -713,6 +747,23 @@ export const useGameLogic = () => {
             addLog(`${stateRef.current.players[pId].name} got 1 food from Well`, '#29b6f6');
             if(stateRef.current.players[pId].type === 'human') playSound('food');
         });
+
+        // Future Resources (e.g. from Large Greenhouse)
+        const futureRes = gs.futureResources[nextRound];
+        if (futureRes && futureRes.length > 0) {
+             futureRes.forEach(res => {
+                  stateRef.current.players.forEach(p => {
+                       // Who gets it? Logic for Large Greenhouse says "You get". 
+                       // Currently futureResources is global, but typically tied to card ownership.
+                       // Simplification: Iterate players, if they have the card Large Greenhouse, they get the veg.
+                       // Check for 'minor_daxingwenshi' owner.
+                       if (p.playedCards.some(c => c.id === 'minor_daxingwenshi') && res === 'veg') {
+                            updatePlayer(p.id, pp => ({ ...pp, res: { ...pp.res, veg: pp.res.veg + 1 } }));
+                            addLog(`${p.name} harvested 1 Vegetable (Greenhouse)`, p.color);
+                       }
+                  });
+             });
+        }
 
         // Groom (o_mafu) active check skipped for simplicity or could be added here
         // Private Forest / Round Start Effects
@@ -1094,6 +1145,8 @@ export const useGameLogic = () => {
                  if (act && act.res) {
                      // @ts-ignore
                      finalP.animals[act.res] += 1;
+                     // FIX: Update Stats for Animal Dealer
+                     finalP.playedCards = finalP.playedCards.map(c => c.id === 'o_dongwujiaoyiyuan' ? updateCardStat(c, act.res!, 1) : c);
                      addLog(`${p.name} bought extra ${act.res}`, p.color);
                  }
              } else {
@@ -1101,8 +1154,16 @@ export const useGameLogic = () => {
              }
         }
         else if (p.tempMode.mode === 'choice_keeper') {
-             if (choice === 'clay') finalP.res.clay += 1;
-             else if (choice === 'grain') finalP.res.grain += 1;
+             if (choice === 'clay') {
+                 finalP.res.clay += 1;
+                 // FIX: Update Stats for Keeper
+                 finalP.playedCards = finalP.playedCards.map(c => c.id === 'o_cangkukanshouyuan' ? updateCardStat(c, 'clay', 1) : c);
+             }
+             else if (choice === 'grain') {
+                 finalP.res.grain += 1;
+                 // FIX: Update Stats for Keeper
+                 finalP.playedCards = finalP.playedCards.map(c => c.id === 'o_cangkukanshouyuan' ? updateCardStat(c, 'grain', 1) : c);
+             }
              addLog(`${p.name} chose bonus resource`, p.color);
         }
         else if (p.tempMode.mode === 'choice_tenant') {
@@ -1129,6 +1190,15 @@ export const useGameLogic = () => {
              } else {
                  finalP.res.food += 2; // Laborer Food
                  addLog(`${p.name} declined Tenant Farmer`, p.color);
+             }
+        }
+        else if (p.tempMode.mode === 'choice_plow_helper') {
+             if (choice === 'yes') {
+                 // Enter plow mode
+                 updatePlayer(pIdx, () => ({ ...finalP, tempMode: { mode: 'plow', actId: actId } }));
+                 return;
+             } else {
+                 addLog(`${p.name} declined Plow Helper`, p.color);
              }
         }
 
@@ -1165,6 +1235,19 @@ export const useGameLogic = () => {
          let errMsg = "";
          let finalP = { ...p };
          
+         // 1. Validate Plow Action (Must plow at least one field)
+         if (p.tempMode.mode === 'plow' || (p.tempMode.mode === 'plow_sow' && p.tempMode.subAction === 'plow')) {
+             if (pending && pending.snapshot) {
+                 const snapP = JSON.parse(pending.snapshot);
+                 const oldFields = snapP.farm.filter((t:number) => t === 2).length;
+                 const newFields = finalP.farm.filter(t => t === 2).length;
+                 if (newFields <= oldFields) {
+                     errMsg = "You must plow at least one field";
+                     isValid = false;
+                 }
+             }
+         }
+
          if (p.tempMode.mode === 'play_occupation' || p.tempMode.mode === 'play_minor_optional') {
              const cardId = p.tempMode.selectedCardId;
 
@@ -1230,6 +1313,21 @@ export const useGameLogic = () => {
                      else { finalP.res.grain += 2; addLog("Consultant: +2 Grain", p.color); }
                 }
 
+                // NEW: Large Greenhouse (minor_daxingwenshi)
+                if (card.id === 'minor_daxingwenshi') {
+                    const currentRound = stateRef.current.gameState.round;
+                    const future = { ...stateRef.current.gameState.futureResources };
+                    [4, 7, 9].forEach(offset => {
+                        const r = currentRound + offset;
+                        if (r <= 14) {
+                            if (!future[r]) future[r] = [];
+                            future[r] = [...future[r], 'veg'];
+                        }
+                    });
+                    updateGameState(prev => ({ ...prev, futureResources: future }));
+                    addLog(`${p.name} planted Vegetables for future rounds`, p.color);
+                }
+
                 // Generic Immediate Effects
                 if (card.effect?.type === 'immediate' && card.effect.bonus) {
                     const amt = card.effect.amount || 1;
@@ -1239,16 +1337,21 @@ export const useGameLogic = () => {
                     card = updateCardStat(card, card.effect.bonus, amt);
                 }
 
-                // House Steward (o_fangwuguanjia)
+                // House Steward (o_fangwuguanjia) - NEW LOGIC
+                // "If played with 1/3/6/9 full rounds remaining -> get 1/2/3/4 wood"
                 if (card.id === 'o_fangwuguanjia') {
-                     const currentRound = stateRef.current.gameState.round;
-                     const future = { ...stateRef.current.gameState.futureResources };
-                     for (let r = currentRound + 1; r <= 14; r++) {
-                         if (!future[r]) future[r] = [];
-                         future[r] = [...future[r], 'wood'];
+                     const remaining = MAX_ROUNDS - stateRef.current.gameState.round;
+                     let bonus = 0;
+                     if (remaining >= 9) bonus = 4;
+                     else if (remaining >= 6) bonus = 3;
+                     else if (remaining >= 3) bonus = 2;
+                     else if (remaining >= 1) bonus = 1;
+
+                     if (bonus > 0) {
+                        finalP.res.wood += bonus;
+                        addLog(`${p.name} got ${bonus} Wood (House Steward)`, p.color);
+                        card = updateCardStat(card, 'wood', bonus);
                      }
-                     updateGameState(prev => ({ ...prev, futureResources: future }));
-                     addLog(`${p.name} placed Wood on future rounds (House Steward)`, p.color);
                 }
 
                 finalP.playedCards = [...finalP.playedCards, card];
@@ -1258,6 +1361,16 @@ export const useGameLogic = () => {
              // Start Player Trigger (Meeting)
              if (p.tempMode.actId === 'act_meeting') {
                  updateGameState(prev => ({ ...prev, nextStartPlayer: pId }));
+             }
+
+             // CONSULTANT OVERFLOW CHECK
+             if (card && card.id === 'o_guwen') {
+                 const alloc = calculateAllocation(finalP);
+                 if (alloc.overflow > 0) {
+                      updatePlayer(pId, () => ({ ...finalP, tempMode: null }));
+                      startOverflow(pId);
+                      return;
+                 }
              }
 
              const newOccupied = { ...stateRef.current.gameState.occupied, [p.tempMode.actId]: pId };
@@ -1273,6 +1386,8 @@ export const useGameLogic = () => {
               
               if ((builtClayRoom || renovatedToStone) && finalP.playedCards.some(c => c.id === 'o_maopifanggong')) {
                    finalP.res.food += 3;
+                   // FIX: Update Stats for Furrier
+                   finalP.playedCards = finalP.playedCards.map(c => c.id === 'o_maopifanggong' ? updateCardStat(c, 'food', 3) : c);
                    addLog(`${p.name} got +3 Food (Furrier)`, p.color);
               }
 
@@ -1307,11 +1422,26 @@ export const useGameLogic = () => {
             
             // @ts-ignore
             if (p.res[costRes] >= costAmt && p.res.reed >= reedCost) {
+                // NEW: Mining Hammer (minor_caikuangchui) - Free Stable
+                let newStables = p.stablesCount;
+                let newFarm = [...p.farm];
+                if (p.playedCards.some(c => c.id === 'minor_caikuangchui') && p.stablesCount < LIMIT_STABLES) {
+                    // Place stable on first available spot (Simplification for Lite version)
+                    const freeIdx = newFarm.indexOf(0);
+                    if (freeIdx !== -1) {
+                        newFarm[freeIdx] = 5;
+                        newStables++;
+                        // Normally we'd add log, but we are inside state updater. We can assume player notices.
+                    }
+                }
+
                 return {
                     ...p,
                     houseType: target as 'clay' | 'stone',
                     // @ts-ignore
-                    res: { ...p.res, [costRes]: p.res[costRes] - costAmt, reed: p.res.reed - reedCost }
+                    res: { ...p.res, [costRes]: p.res[costRes] - costAmt, reed: p.res.reed - reedCost },
+                    stablesCount: newStables,
+                    farm: newFarm
                 };
             } else {
                 addLog(`Need ${costAmt} ${costRes} and ${reedCost} reed`, 'red');
@@ -1330,6 +1460,18 @@ export const useGameLogic = () => {
 
         // Plow
         if (mode === 'plow' || (mode === 'plow_sow' && subAction === 'plow')) {
+            // FIX: Enforce "Plow 1 Field" Limit
+            const pending = stateRef.current.gameState.pendingAction;
+            if (pending && pending.snapshot) {
+                const snapP = JSON.parse(pending.snapshot);
+                const oldFields = snapP.farm.filter((x:number) => x === 2).length;
+                const newFields = p.farm.filter(x => x === 2).length;
+                if (newFields > oldFields) {
+                     addLog("You can only plow 1 field per action", "red");
+                     return; 
+                }
+            }
+
             if (p.farm[tileIdx] === 0) { 
                  updatePlayer(pId, pp => {
                      const newFarm = [...pp.farm];
@@ -1405,7 +1547,13 @@ export const useGameLogic = () => {
         if (p.fences.has(key)) return;
         
         if (p.fences.size >= LIMIT_FENCES) { addLog("Max fences reached", "red"); return; }
-        if (p.res.wood < 1) { addLog("Need 1 Wood", "red"); return; }
+        
+        // NEW: Rammer (minor_hangshiniantu) - Use Clay instead of Wood
+        const hasRammer = p.playedCards.some(c => c.id === 'minor_hangshiniantu');
+        const costRes = hasRammer ? 'clay' : 'wood';
+        
+        // @ts-ignore
+        if (p.res[costRes] < 1) { addLog(`Need 1 ${hasRammer ? 'Clay (Rammer)' : 'Wood'}`, "red"); return; }
 
         updatePlayer(pId, pp => {
             const newFences = new Set(pp.fences);
@@ -1413,7 +1561,8 @@ export const useGameLogic = () => {
             return {
                 ...pp,
                 fences: newFences,
-                res: { ...pp.res, wood: pp.res.wood - 1 }
+                // @ts-ignore
+                res: { ...pp.res, [costRes]: pp.res[costRes] - 1 }
             };
         });
         playSound('fence');

@@ -322,6 +322,7 @@ const App: React.FC = () => {
   const isKeeperChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_keeper';
   const isTenantChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_tenant';
   const isAnimalDealerChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_animal_dealer';
+  const isPlowHelperChoice = activePlayer.type === 'human' && activePlayer.tempMode?.mode === 'choice_plow_helper';
 
   return (
     <div className="min-h-screen bg-stone-900 text-stone-200 font-sans selection:bg-yellow-500/30 overflow-x-hidden">
@@ -387,6 +388,7 @@ const App: React.FC = () => {
                             activePlayer.tempMode.mode === 'choice_keeper' ? 'Card Effect' :
                             activePlayer.tempMode.mode === 'choice_tenant' ? 'Card Effect' :
                             activePlayer.tempMode.mode === 'choice_animal_dealer' ? 'Card Effect' :
+                            activePlayer.tempMode.mode === 'choice_plow_helper' ? 'Card Effect' :
                             activePlayer.tempMode.mode === 'tenant_build_room' ? 'Extra Build Room' :
                             actionDetails?.name || activePlayer.tempMode.mode}
                         </span>
@@ -394,7 +396,7 @@ const App: React.FC = () => {
 
                     <div className="flex items-center gap-2">
                         {/* Choice Modes */}
-                        {(isCaigurenChoice || isKeeperChoice || isTenantChoice || isAnimalDealerChoice) ? (
+                        {(isCaigurenChoice || isKeeperChoice || isTenantChoice || isAnimalDealerChoice || isPlowHelperChoice) ? (
                             <span className="text-xs text-yellow-400 font-bold animate-pulse">Waiting for decision...</span>
                         ) : (
                         /* If in a card selection mode, controls are in modal, except cancel */
@@ -917,11 +919,11 @@ const App: React.FC = () => {
       )}
       
       {/* CHOICE MODAL FOR CAIGUREN / KEEPER / TENANT / ANIMAL DEALER */}
-      {(isCaigurenChoice || isKeeperChoice || isTenantChoice || isAnimalDealerChoice) && (
+      {(isCaigurenChoice || isKeeperChoice || isTenantChoice || isAnimalDealerChoice || isPlowHelperChoice) && (
            <div className="fixed inset-0 z-[170] flex items-center justify-center bg-black/80 backdrop-blur-md animate-fadeIn">
                <div className="bg-stone-900 border-4 border-yellow-600 rounded-xl p-8 max-w-sm w-full flex flex-col items-center gap-6 shadow-2xl relative">
                    <h2 className="text-2xl font-bold text-yellow-400 text-center">
-                       {isCaigurenChoice ? "Purchaser Effect" : isKeeperChoice ? "Storehouse Keeper Bonus" : isAnimalDealerChoice ? "Animal Dealer" : "Tenant Farmer"}
+                       {isCaigurenChoice ? "Purchaser Effect" : isKeeperChoice ? "Storehouse Keeper Bonus" : isAnimalDealerChoice ? "Animal Dealer" : isPlowHelperChoice ? "Plow Helper" : "Tenant Farmer"}
                    </h2>
                    
                    <p className="text-stone-300 text-center">
@@ -929,6 +931,7 @@ const App: React.FC = () => {
                             ? "Convert 1 Wood into 2 Food?" 
                             : isKeeperChoice ? "Choose your bonus resource:" 
                             : isAnimalDealerChoice ? "Pay 1 Food to get 1 extra animal?"
+                            : isPlowHelperChoice ? "Do you want to plow 1 field?"
                             : "Choose an extra action to perform:"}
                    </p>
                    
@@ -943,6 +946,12 @@ const App: React.FC = () => {
                            <div className="flex gap-4 justify-center">
                                <button onClick={() => resolveCardChoice('no')} className="px-6 py-2 bg-stone-700 hover:bg-stone-600 text-white rounded font-bold uppercase">No</button>
                                <button onClick={() => resolveCardChoice('yes')} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold uppercase shadow-lg">Yes (-1 Food)</button>
+                           </div>
+                       )}
+                       {isPlowHelperChoice && (
+                           <div className="flex gap-4 justify-center">
+                               <button onClick={() => resolveCardChoice('no')} className="px-6 py-2 bg-stone-700 hover:bg-stone-600 text-white rounded font-bold uppercase">No</button>
+                               <button onClick={() => resolveCardChoice('yes')} className="px-6 py-2 bg-green-600 hover:bg-green-500 text-white rounded font-bold uppercase shadow-lg">Yes (Plow)</button>
                            </div>
                        )}
                        {isKeeperChoice && (

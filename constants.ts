@@ -1,5 +1,3 @@
-
-
 import { Action, Card } from "./types";
 
 export const LIMIT_FENCES = 15;
@@ -41,7 +39,7 @@ export const DB_OCCUPATIONS: Card[] = [
     { id: 'o_dizhixuejia', name: '地质学家', type: 'occupation', cost: { food: 1 }, score: 0, desc: '森林3/芦苇/粘土坑: +1砖' },
     { id: 'o_dongwujiaoyiyuan', name: '动物交易员', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿羊/猪/牛积累: 1食买1只' },
     { id: 'o_famugong', name: '伐木工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '拿木头积累: +1木', effect: { type: 'passive_res', trigger: 'wood', amount: 1 } },
-    { id: 'o_fangwuguanjia', name: '房屋管家', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时: 剩轮数送木. 终局: 最多房3分', effect: { type: 'immediate' } },
+    { id: 'o_fangwuguanjia', name: '房屋管家', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时: 剩1/3/6/9轮获1/2/3/4木. 终局: 最多房3分', effect: { type: 'immediate' } },
     
     // New cards
     { id: 'o_gemaigong', name: '格麦工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时+1麦. 收获时每块麦田多收1麦', effect: { type: 'immediate', bonus: 'grain', amount: 1 } },
@@ -57,10 +55,93 @@ export const DB_OCCUPATIONS: Card[] = [
 ];
 
 export const DB_MINORS: Card[] = [
-    { id: 'n1', name: '木柴 (Firewood)', type: 'minor', cost: {}, score: 0, desc: '立即获得1木头', effect: { type: 'immediate', bonus: 'wood', amount: 1 } },
-    { id: 'n2', name: '简易灶台 (Hearth)', type: 'minor', cost: { clay: 1 }, score: 1, desc: '如同壁炉: 变食羊2/猪2/牛3/菜2', cook: { sheep: 2, boar: 2, cow: 3, veg: 2 } },
-    { id: 'n3', name: '私人林地 (Private Forest)', type: 'minor', cost: { food: 2 }, score: 0, desc: '每轮开始时(收获或普通)，获得1木头', effect: { type: 'round_start', bonus: 'wood', amount: 1 } },
-    { id: 'n4', name: '木筏 (Raft)', type: 'minor', cost: { wood: 2 }, score: 0, desc: '每当你拿"芦苇"时，额外获得1食物', effect: { type: 'passive_action', trigger: 'reed', bonus: 'food', amount: 1 } },
+    { 
+        id: 'minor_caikuangchui', 
+        name: '采矿锤', 
+        type: 'minor', 
+        cost: { wood: 1 }, 
+        score: 0, 
+        desc: '打出时立即获得1份食物。每当你翻修房屋时，你可以额外免费建造1间马厩', 
+        effect: { type: 'immediate', bonus: 'food', amount: 1 } 
+    },
+    { 
+        id: 'minor_chanzi', 
+        name: '铲子', 
+        type: 'minor', 
+        cost: { wood: 1 }, 
+        score: 0, 
+        desc: '你可以在任意时刻将生长着不少于2棵作物的田地中的1棵作物移至其他空的田地上' 
+    },
+    { 
+        id: 'minor_daguban', 
+        name: '打谷板', 
+        type: 'minor', 
+        cost: { wood: 1 }, 
+        condition: { minOccupations: 2 },
+        score: 1, 
+        desc: '条件:2职业. 每当你使用犁田/粮食耕种（犁田+播种）行动格时，你可以进行1次“烤面包”行动' 
+    },
+    { 
+        id: 'minor_danongchang', 
+        name: '大农场', 
+        type: 'minor', 
+        cost: {}, 
+        condition: { fullFarm: true },
+        score: 0, 
+        desc: '条件:农场建满. 打出此卡时，距离游戏结束没剩1个完整回合，你便可获得1分+2份食物', 
+        effect: { type: 'end_game' } 
+    },
+    { 
+        id: 'minor_daxingwenshi', 
+        name: '大型温室', 
+        type: 'minor', 
+        cost: { wood: 2 }, 
+        condition: { minOccupations: 2 },
+        score: 0, 
+        desc: '条件:2职业. 将当前回合数加4,7,9，在这些回合的行动格上各放一份蔬菜，这些回合开始时，你获得这份蔬菜' 
+    },
+    { 
+        id: 'minor_dumuzhou', 
+        name: '独木舟', 
+        type: 'minor', 
+        cost: { wood: 2 }, 
+        condition: { minOccupations: 1 },
+        score: 1, 
+        desc: '条件:1职业. 每当你使用钓鱼积累行动格时，你额外获得1份食物和1捆芦苇' 
+    },
+    { 
+        id: 'minor_fangche', 
+        name: '纺车', 
+        type: 'minor', 
+        cost: { wood: 3, food: 3 }, 
+        score: 0, 
+        desc: '此卡可以为1名家庭成员提供居住空间' 
+    },
+    { 
+        id: 'minor_guwuchan', 
+        name: '谷物铲', 
+        type: 'minor', 
+        cost: { wood: 1 }, 
+        score: 0, 
+        desc: '每当你使用小麦种子行动格时，你额外获得1份小麦' 
+    },
+    { 
+        id: 'minor_hangshiniantu', 
+        name: '夯实粘土', 
+        type: 'minor', 
+        cost: {}, 
+        score: 0, 
+        desc: '立即获得1块砖头。现在起你可以使用砖头来代替木头建造栅栏', 
+        effect: { type: 'immediate', bonus: 'clay', amount: 1 } 
+    },
+    { 
+        id: 'minor_helanfengche', 
+        name: '荷兰风车', 
+        type: 'minor', 
+        cost: { wood: 2, stone: 2 }, 
+        score: 2, 
+        desc: '每当你在丰收时节之后紧跟着的回合里使用了“烤面包”行动，你额外获得3份食物' 
+    },
 ];
 
 export const BASE_ACTIONS: Action[] = [

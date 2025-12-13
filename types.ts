@@ -1,4 +1,3 @@
-
 export type ResourceType = 'wood' | 'clay' | 'reed' | 'stone' | 'food' | 'grain' | 'veg' | 'sheep' | 'boar' | 'cow';
 
 export interface Cost {
@@ -18,6 +17,11 @@ export interface CardEffect {
   amount?: number;
 }
 
+export interface CardCondition {
+    minOccupations?: number; // Requires X occupations played
+    fullFarm?: boolean;      // Requires 0 empty tiles on farm
+}
+
 export interface Card {
   id: string;
   name: string;
@@ -34,6 +38,7 @@ export interface Card {
   bonusType?: ResourceType;
   // New
   effect?: CardEffect;
+  condition?: CardCondition; // Added condition
   statTracker?: { [key: string]: number }; // Tracks accumulated bonuses by type
 }
 
@@ -128,6 +133,7 @@ export interface TempMode {
   subAction?: 'sow' | 'bake' | 'both' | 'plow' | 'upgrade'; // Added upgrade for Fireplace
   bakeTargets?: { [majorId: string]: number }; // Tracks grain assigned to specific baking majors
   selectedCardId?: string | null; // For Hand Selection (Occupation/Minor)
+  bakeEnabled?: boolean; // For Threshing Board
 }
 
 export interface GameState {
