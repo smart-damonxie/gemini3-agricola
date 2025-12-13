@@ -390,6 +390,7 @@ const App: React.FC = () => {
                             activePlayer.tempMode.mode === 'choice_animal_dealer' ? 'Card Effect' :
                             activePlayer.tempMode.mode === 'choice_plow_helper' ? 'Card Effect' :
                             activePlayer.tempMode.mode === 'tenant_build_room' ? 'Extra Build Room' :
+                            activePlayer.tempMode.mode === 'place_lunken_field' ? 'Place 1 Field' :
                             actionDetails?.name || activePlayer.tempMode.mode}
                         </span>
                     </div>
@@ -451,6 +452,12 @@ const App: React.FC = () => {
                                 {activePlayer.tempMode.mode === 'tenant_build_room' && (
                                     <div className="text-[10px] text-blue-200 bg-blue-900/40 px-2 py-0.5 rounded border border-blue-600">
                                         Select an empty space adjacent to a room. Cost: 5 Wood, 2 Reed. (Max 1)
+                                    </div>
+                                )}
+                                
+                                {activePlayer.tempMode.mode === 'place_lunken_field' && (
+                                    <div className="text-[10px] text-green-200 bg-green-900/40 px-2 py-0.5 rounded border border-green-600">
+                                        Select an empty space to plow (must be adjacent to existing fields).
                                     </div>
                                 )}
 
@@ -687,7 +694,7 @@ const App: React.FC = () => {
                                     </>
                                 )}
                             </>
-                        )}
+                        )
                         )}
                     </div>
                 </div>
@@ -833,7 +840,7 @@ const App: React.FC = () => {
                       return (
                            <ActionSlot 
                               key={`round-${roundNum}`}
-                              action={{ id: `future-${roundNum}`, name: `Round ${roundNum}`, desc: `Stage ${getStage(roundNum)}`, type: 'special' }}
+                              action={{ id: `future-${roundNum}`, name: `Round ${roundNum}`, desc: `Stage ${getStage(roundNum}`, type: 'special' }}
                               isFuture={true}
                               onClick={() => {}}
                               futureResources={futureRes}

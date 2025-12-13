@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Action, Player, ResourceType } from '../types';
 
@@ -7,10 +6,10 @@ interface Props {
   occupiedBy?: Player;
   onClick: () => void;
   isFuture?: boolean;
-  futureResources?: ResourceType[];
+  futureResources?: (ResourceType | 'field')[];
 }
 
-const getResIcon = (res: ResourceType) => {
+const getResIcon = (res: ResourceType | 'field') => {
     switch(res) {
         case 'wood': return '🪵';
         case 'clay': return '🧱';
@@ -22,6 +21,7 @@ const getResIcon = (res: ResourceType) => {
         case 'sheep': return '🐑';
         case 'boar': return '🐗';
         case 'cow': return '🐮';
+        case 'field': return '🟫';
         default: return '📦';
     }
 };

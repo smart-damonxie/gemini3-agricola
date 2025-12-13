@@ -1,3 +1,4 @@
+
 export type ResourceType = 'wood' | 'clay' | 'reed' | 'stone' | 'food' | 'grain' | 'veg' | 'sheep' | 'boar' | 'cow';
 
 export interface Cost {
@@ -6,6 +7,11 @@ export interface Cost {
   reed?: number;
   stone?: number;
   food?: number;
+  grain?: number;
+  veg?: number;
+  sheep?: number;
+  boar?: number;
+  cow?: number;
 }
 
 export type CardType = 'occupation' | 'minor' | 'major';
@@ -18,8 +24,12 @@ export interface CardEffect {
 }
 
 export interface CardCondition {
-    minOccupations?: number; // Requires X occupations played
+    minOccupations?: number; // Requires >= X occupations played
+    maxOccupations?: number; // Requires <= X occupations played
+    exactOccupations?: number; // Requires == X occupations played
     fullFarm?: boolean;      // Requires 0 empty tiles on farm
+    minSheep?: number;       // Requires >= X sheep
+    minGrainFields?: number; // Requires >= X grain fields
 }
 
 export interface Card {
@@ -118,6 +128,7 @@ export interface Player {
   assignedAnimals: { [key: number]: ResourceType[] };
   workshopsUsed: { reed: boolean; wood: boolean; clay: boolean }; // Track usage in feed phase
   firewoodCollectorTriggered: boolean; // Tracks if o_chaihuoshiqugong condition met this round
+  roundGains: { wood: number; clay: number; reed: number; stone: number }; // New: Track building resources gained this round
 }
 
 export interface TempMode {
@@ -134,6 +145,8 @@ export interface TempMode {
   bakeTargets?: { [majorId: string]: number }; // Tracks grain assigned to specific baking majors
   selectedCardId?: string | null; // For Hand Selection (Occupation/Minor)
   bakeEnabled?: boolean; // For Threshing Board
+  actionLimit?: number; // Specific limit for the action (e.g. Plow Helper = 1)
+  cardToPass?: Card; // Card object to pass after interactive step (e.g. Turnip Field)
 }
 
 export interface GameState {
@@ -152,7 +165,7 @@ export interface GameState {
   pendingAction: { pIdx: number; timer: any; snapshot: string; flags: any } | null;
   overflowQueue: any[];
   gameOver: boolean;
-  futureResources: { [roundIdx: number]: ResourceType[] }; // roundIdx 0-13 (Round 1-14)
+  futureResources: { [roundIdx: number]: (ResourceType | 'field')[] }; // roundIdx 0-13 (Round 1-14). Added 'field' for Handcart
   turnPhase: 'action' | 'overflow';
   overflowPlayer: number | null;
   wellRewards: { [round: number]: number[] }; // round -> playerIds to award food

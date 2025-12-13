@@ -44,7 +44,7 @@ export const DB_OCCUPATIONS: Card[] = [
     // New cards
     { id: 'o_gemaigong', name: '格麦工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时+1麦. 收获时每块麦田多收1麦', effect: { type: 'immediate', bonus: 'grain', amount: 1 } },
     { id: 'o_gengzhongbangshou', name: '耕种帮手', type: 'occupation', cost: { food: 1 }, score: 0, desc: '使用临时工行动时, 能额外犁一块田' },
-    { id: 'o_guwen', name: '顾问', type: 'occupation', cost: { food: 1 }, score: 0, desc: '打出时: 1/2/3/4人局获得2麦/3砖/2苇/2羊' },
+    { id: 'o_guwen', name: '顾问', type: 'occupation', cost: { food: 1 }, score: 0, desc: '打出时: 1/2/3/4人局获得2麦/3砖/2苇/2羊', effect: { type: 'immediate', bonus: 'sheep', amount: 2 } },
     { id: 'o_jianzhufuyuanshi', name: '建筑复原师', type: 'occupation', cost: { food: 1 }, score: 0, desc: '翻修时, 可跳过砖屋, 直接将木屋翻修成石屋' },
     { id: 'o_jijiegong', name: '季节工', type: 'occupation', cost: { food: 1 }, score: 0, desc: '临时工: +1麦. 第6回合起改为+1菜或+1麦' },
     { id: 'o_mafu', name: '马夫', type: 'occupation', cost: { food: 1 }, score: 0, desc: '即时+1木. 住石屋后每回合可花1木建1马厩', effect: { type: 'immediate', bonus: 'wood', amount: 1 } },
@@ -142,6 +142,28 @@ export const DB_MINORS: Card[] = [
         score: 2, 
         desc: '每当你在丰收时节之后紧跟着的回合里使用了“烤面包”行动，你额外获得3份食物' 
     },
+    
+    // NEW CARDS (20)
+    { id: 'minor_huashili', name: '滑石犁', type: 'minor', cost: { wood: 2 }, condition: { minOccupations: 1 }, score: 0, desc: '放2田在卡上. 犁田时可用1卡上田额外犁1块. 2职业' },
+    { id: 'minor_huotan', name: '货摊', type: 'minor', cost: { grain: 1 }, score: 0, desc: '立即+1菜. 使用后传给下家手牌' },
+    { id: 'minor_jiashiqian', name: '夹石钳', type: 'minor', cost: { wood: 1 }, score: 0, desc: '拿石头积累格时+1石头' },
+    { id: 'minor_jumuchang', name: '锯木厂', type: 'minor', cost: { stone: 2 }, condition: { maxOccupations: 3 }, score: 2, desc: '发展卡木头花费-1. 条件:<=3职业' },
+    { id: 'minor_lunken', name: '轮垦', type: 'minor', cost: { food: 2 }, score: 0, desc: '立即犁1田. 使用后传给下家手牌' },
+    { id: 'minor_miniquandi', name: '迷你圈地', type: 'minor', cost: { food: 2 }, score: 0, desc: '立即免费围1格(需相邻)圈地. 使用后传给下家手牌' },
+    { id: 'minor_mujiangdian', name: '木匠店', type: 'minor', cost: { wood: 1, stone: 1 }, score: 0, desc: '建木屋花费改为2木2苇' },
+    { id: 'minor_muyangzhang', name: '牧羊杖', type: 'minor', cost: { wood: 1 }, score: 0, desc: '围出>=4格圈地时, 立即+2羊' },
+    { id: 'minor_niantuluji', name: '粘土路基', type: 'minor', cost: { food: 1 }, score: 0, desc: '每2砖补给->+1砖. 使用后传给下家手牌' },
+    { id: 'minor_niunaiguan', name: '牛奶罐', type: 'minor', cost: { clay: 1 }, score: 0, desc: '任何人拿牛市场(积累): 你+3食, 其他人+1食' },
+    { id: 'minor_shicao', name: '石槽', type: 'minor', cost: { wood: 2 }, score: 0, desc: '终局: 6/7/8/10格圈地 -> 1/2/3/4分', effect: { type: 'end_game' } },
+    { id: 'minor_shoutuili', name: '手推犁', type: 'minor', cost: { wood: 1 }, score: 0, desc: '当前回合+5放1田. 该回合开始时犁那块田' },
+    { id: 'minor_tangbianxiaowu', name: '塘边小屋', type: 'minor', cost: { wood: 1 }, condition: { exactOccupations: 2 }, score: 1, desc: '后3回合各放1食. 回合开始获得. 条件:2职业' },
+    { id: 'minor_taotuyandou', name: '陶土烟斗', type: 'minor', cost: { clay: 1 }, score: 0, desc: '回家阶段: 若本轮获得>=7建筑资源, +2食' },
+    { id: 'minor_xiuqijiao', name: '休憩角', type: 'minor', cost: { wood: 1 }, condition: { minGrainFields: 2 }, score: 1, desc: '可使用被占用的生儿育女格. 条件:>=2麦田' },
+    { id: 'minor_yangmaotan', name: '羊毛毯', type: 'minor', cost: {}, condition: { minSheep: 5 }, score: 0, desc: '终局: 木/砖/石屋 -> 3/2/0分. 条件:>=5羊', effect: { type: 'end_game' } },
+    { id: 'minor_yinshuicao', name: '饮水槽', type: 'minor', cost: { clay: 1 }, score: 0, desc: '每圈地容量+2' },
+    { id: 'minor_youchushichang', name: '幼畜市场', type: 'minor', cost: { sheep: 1 }, score: 0, desc: '立即+1牛. 使用后传给下家手牌' },
+    { id: 'minor_zawufang', name: '杂物房', type: 'minor', cost: { wood: 1, clay: 1 }, score: 0, desc: '每打出1张发展卡(含此卡) +1食' },
+    { id: 'minor_zhukuang', name: '竹筐', type: 'minor', cost: { reed: 1 }, score: 0, desc: '拿木头积累后: 可将2木变3食(木头放回行动格)' }
 ];
 
 export const BASE_ACTIONS: Action[] = [

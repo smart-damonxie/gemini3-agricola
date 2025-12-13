@@ -1,5 +1,3 @@
-
-
 import { Allocation, FarmLayout, Player, ResourceType } from "../types";
 import { SCORING_TIERS, MAX_ROUNDS } from "../constants";
 
@@ -14,30 +12,20 @@ export const analyzeFarmLayout = (p: Player): FarmLayout => {
     const singles: { idx: number; type: 'house'|'stable'; capacity: number }[] = [];
     const houseTiles = p.farm.map((t, i) => t === 1 ? i : -1).filter(i => i !== -1);
     
-    // House Capacity Rule: A house (regardless of rooms) can usually hold 1 pet.
     if (houseTiles.length > 0) {
          singles.push({ idx: houseTiles[0], type: 'house', capacity: 1 });
     }
 
-    // NEW: Spinning Wheel (minor_fangche) - Provides living space for 1 person (Virtual Room)
-    // We treat it like a house capacity slot for allocation purposes, though it's technically for people.
-    // However, if logic checks `rooms > workers` for breeding, we need to handle that in the breeding check.
-    // Here we add it as a capacity slot for generic logic if needed, but primarily 'r_grow' checks p.farm explicitly.
-    // Wait, the prompt implies "Capacity". Usually implies housing. 
-    // If we want to support breeding with it, we need to modify breeding logic.
-    // For now, let's just ensure it exists in layout if we use layout for capacity.
-    // BUT, standard logic uses `analyzeFarmLayout` for ANIMALS.
-    // Breeding logic `r_grow` usually checks `rooms > workers`. 
-    // We should patch `calculateScore` or Breeding Check separately.
-    // However, for generic capacity (animals/people), we add a virtual slot here to be safe.
     if (p.playedCards.some(c => c.id === 'minor_fangche')) {
-        // Virtual slot at index -1
         singles.push({ idx: -1, type: 'house', capacity: 1 });
     }
 
     const visited = new Set<number>();
     const pastures: { capacity: number; tiles: number[]; assignedType?: string }[] = [];
     
+    // NEW: Water Trough (minor_yinshuicao) - +2 Capacity per pasture
+    const extraCap = p.playedCards.some(c => c.id === 'minor_yinshuicao') ? 2 : 0;
+
     const hasW = (idx: number, s: string): boolean => {
         if (s === 't') return p.fences.has(`${idx}-t`);
         if (s === 'l') return p.fences.has(`${idx}-l`);
@@ -47,7 +35,6 @@ export const analyzeFarmLayout = (p: Player): FarmLayout => {
     };
 
     for (let i = 0; i < 15; i++) {
-        // We only care about Empty(0) or Stable(5) for valid pastures
         if (visited.has(i) || (p.farm[i] !== 0 && p.farm[i] !== 5)) continue;
         let queue = [i], tiles: number[] = [], enclosed = true, hasStable = (p.farm[i] === 5);
         visited.add(i);
@@ -66,7 +53,7 @@ export const analyzeFarmLayout = (p: Player): FarmLayout => {
                 });
         }
         if (enclosed) {
-            const capacity = tiles.length * (hasStable ? 4 : 2);
+            const capacity = tiles.length * (hasStable ? 4 : 2) + extraCap;
             pastures.push({ capacity, tiles });
         } else {
             tiles.forEach(t => {
@@ -89,14 +76,11 @@ export const calculateScore = (p: Player, allPlayers?: Player[]): number => {
     s += getTierScore('boar', p.animals.boar);
     s += getTierScore('cow', p.animals.cow);
 
-    // Unused spaces calculation
     let occupiedCount = 0;
     for (let i = 0; i < 15; i++) {
-        // Direct occupancy (House, Field, Stable)
         if (p.farm[i] !== 0) {
             occupiedCount++;
         } else {
-            // Check if it's part of a pasture (even if empty)
             for (const pasture of layout.pastures) {
                 if (pasture.tiles.includes(i)) {
                     occupiedCount++;
@@ -107,12 +91,14 @@ export const calculateScore = (p: Player, allPlayers?: Player[]): number => {
     }
     s -= (15 - occupiedCount);
 
-    // Fenced Stables Score
-    // Rule: Score equals total number of stables contained in enclosures
     let fencedStablesCount = 0;
+    let fencedTiles = 0; // For Manger
+    layout.pastures.forEach(pas => {
+        fencedTiles += pas.tiles.length;
+    });
+
     for (let i = 0; i < 15; i++) {
-        if (p.farm[i] === 5) { // Stable
-            // Check if this stable is part of a valid pasture
+        if (p.farm[i] === 5) { 
             const inPasture = layout.pastures.some(pas => pas.tiles.includes(i));
             if (inPasture) fencedStablesCount++;
         }
@@ -125,22 +111,19 @@ export const calculateScore = (p: Player, allPlayers?: Player[]): number => {
 
     s += p.res.maxWorkers * 3;
     
-    // Major Scores (Majors are also in playedCards now if consistent, but usually kept separate in current codebase)
     p.majors.forEach(m => s += m.score);
-    
-    // Played Cards Scores (Occupations / Minors)
     p.playedCards.forEach(c => s += c.score);
 
     // End Game Effects
     p.playedCards.forEach((c, idx) => {
         if (c.effect?.type === 'end_game') {
-            if (c.id === 'o4' || c.name.includes('Organic')) { // Organic Farmer
+            if (c.id === 'o4' || c.name.includes('Organic')) { 
                 let types = 0;
                 if (p.animals.sheep > 0) types++;
                 if (p.animals.boar > 0) types++;
                 if (p.animals.cow > 0) types++;
                 s += types;
-            } else if (c.id === 'o_chuiniudawang') { // Braggart
+            } else if (c.id === 'o_chuiniudawang') { 
                 const count = p.majors.length + p.playedCards.length;
                 if (count >= 10) s += 9;
                 else if (count >= 9) s += 7;
@@ -148,7 +131,7 @@ export const calculateScore = (p: Player, allPlayers?: Player[]): number => {
                 else if (count >= 7) s += 4;
                 else if (count >= 6) s += 3;
                 else if (count >= 5) s += 2;
-            } else if (c.id === 'o_daoshi') { // Mentor
+            } else if (c.id === 'o_daoshi') { 
                 let count = 0;
                 const myIdx = p.playedCards.findIndex(card => card.id === c.id);
                 if (myIdx !== -1) {
@@ -157,7 +140,7 @@ export const calculateScore = (p: Player, allPlayers?: Player[]): number => {
                     }
                 }
                 s += count;
-            } else if (c.id === 'o_fangwuguanjia' && allPlayers) { // House Steward
+            } else if (c.id === 'o_fangwuguanjia' && allPlayers) { 
                 const myRooms = p.farm.filter(x => x === 1).length;
                 let maxRooms = 0;
                 allPlayers.forEach(op => {
@@ -167,28 +150,32 @@ export const calculateScore = (p: Player, allPlayers?: Player[]): number => {
                 if (myRooms > 0 && myRooms === maxRooms) {
                     s += 3;
                 }
-            } else if (c.id === 'minor_danongchang') { // Large Farm
-                // "If played when < 1 full round left" check was done at play time to give food.
-                // The card text says "You get 1 VP + 2 Food".
-                // Since VP is usually static 1 in c.score, we check if there's conditional VP.
-                // The text implies the VP is conditional too? 
-                // "You may receive 1 VP + 2 Food". 
-                // Usually cards grant the VP statically if listed.
-                // Assuming c.score is 0 in DB and we add 1 here if played late?
-                // Actually, the prompt text says "You get 1 pt + 2 food".
-                // We'll assume the 1 point is added here.
-                // Since we don't track WHEN it was played easily without extra state,
-                // we'll assume if they have the card, they successfully played it (maybe during end game).
-                // But wait, if they played it early, they shouldn't get points?
-                // The condition "less than 1 round left" applies to the benefit.
-                // If played earlier, it does nothing?
-                // Simplification: Always give 1 point here as the card is present.
+            } else if (c.id === 'minor_danongchang') { 
                 s += 1; 
+            }
+            // NEW: Manger (minor_shicao)
+            else if (c.id === 'minor_shicao') {
+                if (fencedTiles >= 10) s += 4;
+                else if (fencedTiles >= 8) s += 3;
+                else if (fencedTiles >= 7) s += 2;
+                else if (fencedTiles >= 6) s += 1;
+            }
+            // NEW: Wool Blanket (minor_yangmaotan)
+            else if (c.id === 'minor_yangmaotan') {
+                if (p.houseType === 'wood') s += 3;
+                else if (p.houseType === 'clay') s += 2;
+            }
+            // NEW: Shepherd's Staff (minor_majiujianzaoshi) -> Existing card, but let's check
+            else if (c.id === 'o_majiujianzaoshi') { // Stable Master
+                 let unfencedStables = 0;
+                 for(let i=0; i<15; i++) {
+                     if(p.farm[i]===5 && !layout.pastures.some(pas => pas.tiles.includes(i))) unfencedStables++;
+                 }
+                 s += unfencedStables;
             }
         }
     });
     
-    // Bonus Points for Workshops (Majors)
     p.majors.filter(m => m.special === 'bonus').forEach(m => {
         if (m.id === 'm7') { // Joinery (Wood)
             if (p.res.wood >= 7) s += 3;
@@ -214,32 +201,25 @@ export const getAniIcon = (type: string) => type === 'sheep' ? '🐑' : (type ==
 export const calculateAllocation = (p: Player): Allocation => {
     const distribution: { icon: string; type: string }[][] = Array(15).fill(null).map(() => []);
 
-    // 1. Place Workers in Rooms
     const rooms = p.farm.map((t, i) => t === 1 ? i : -1).filter(i => i !== -1);
     
-    // Support for Spinning Wheel (minor_fangche): Virtual Room Capacity
     let extraCapacity = 0;
     if (p.playedCards.some(c => c.id === 'minor_fangche')) extraCapacity = 1;
 
     let workersPlaced = 0;
-    // Fill rooms first
     rooms.forEach(rIdx => {
         if (workersPlaced < p.res.maxWorkers) {
             distribution[rIdx].push({ icon: '👷', type: 'worker' });
             workersPlaced++;
         }
     });
-    // If workers left and we have Spinning Wheel capacity, place them virtually (visualize in first room or generic)
     if (workersPlaced < p.res.maxWorkers && extraCapacity > 0) {
-        // Place in first room if exists, or just account for it
         if (rooms.length > 0) {
              distribution[rooms[0]].push({ icon: '👷', type: 'worker' });
              workersPlaced++;
         }
     }
 
-    // 2. Place Animals
-    // If Manual Assignment exists, use it exclusively
     if (p.assignedAnimals && Object.keys(p.assignedAnimals).length > 0) {
         const used = { sheep: 0, boar: 0, cow: 0 };
 
@@ -263,7 +243,6 @@ export const calculateAllocation = (p: Player): Allocation => {
         return { distribution, overflow };
     }
 
-    // Default Auto-Allocation
     const layout = analyzeFarmLayout(p);
     const animalGroups = [
         { type: 'sheep', count: p.animals.sheep, remaining: 0 },
@@ -272,7 +251,6 @@ export const calculateAllocation = (p: Player): Allocation => {
     ];
     animalGroups.sort((a, b) => b.count - a.count);
     
-    // Sort pastures by capacity to optimize large herds
     const sortedPastures = [...layout.pastures].sort((a, b) => b.capacity - a.capacity);
     
     animalGroups.forEach(group => {
@@ -297,7 +275,7 @@ export const calculateAllocation = (p: Player): Allocation => {
     animalGroups.forEach(group => {
         while (group.remaining > 0 && slots.length > 0) {
             const slot = slots.shift()!;
-            if (slot.idx !== -1) { // Skip virtual slots for animals
+            if (slot.idx !== -1) { 
                 distribution[slot.idx].push({ icon: getAniIcon(group.type), type: 'ani' });
                 group.remaining--;
             }
@@ -309,7 +287,6 @@ export const calculateAllocation = (p: Player): Allocation => {
 };
 
 export const validateFenceRules = (p: Player): boolean => {
-    // 1. Degree Check: No "Loose Ends" allowed.
     const degrees: { [key: string]: number } = {};
     const addDeg = (x: number, y: number) => { 
         const k = `${x},${y}`; 
@@ -329,7 +306,6 @@ export const validateFenceRules = (p: Player): boolean => {
         const idx = parseInt(idxStr);
         const r = Math.floor(idx / 5);
         const c = idx % 5;
-        // Map edges to vertices (x=col, y=row)
         if (side === 't') { addDeg(c, r); addDeg(c + 1, r); }
         if (side === 'b') { addDeg(c, r + 1); addDeg(c + 1, r + 1); }
         if (side === 'l') { addDeg(c, r); addDeg(c, r + 1); }
@@ -337,17 +313,12 @@ export const validateFenceRules = (p: Player): boolean => {
     });
 
     for (const k in degrees) {
-        // Degree 1 means a dead end
         if (degrees[k] === 1) return false; 
     }
 
-    // 2. Content Check: Fences cannot enclose Rooms(1) or Fields(2).
-    // They can ONLY enclose Empty(0) or Stable(5).
-    // We iterate through all Rooms and Fields and verify they can "escape" to the outside.
     for (let i = 0; i < 15; i++) {
         const type = p.farm[i];
-        if (type === 1 || type === 2) { // Room or Field
-            // Check if enclosed by performing a Flood Fill (BFS)
+        if (type === 1 || type === 2) { 
             let escaped = false;
             let queue = [i];
             let visited = new Set<number>();
@@ -377,7 +348,7 @@ export const validateFenceRules = (p: Player): boolean => {
                 }
                 if (escaped) break;
             }
-            if (!escaped) return false; // Trapped! Invalid.
+            if (!escaped) return false; 
         }
     }
     

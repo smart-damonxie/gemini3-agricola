@@ -48,7 +48,8 @@ const TEST_PLAYER_TEMPLATE: Player = {
     pendingBreeding: null,
     assignedAnimals: {},
     workshopsUsed: { reed: false, wood: false, clay: false },
-    firewoodCollectorTriggered: false
+    firewoodCollectorTriggered: false,
+    roundGains: { wood: 0, clay: 0, reed: 0, stone: 0 }
 };
 
 const TestPanel: React.FC<Props> = ({ isOpen, onClose }) => {

@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { Card, Player } from '../types';
 
@@ -31,24 +30,46 @@ const HandModal: React.FC<Props> = ({ cards, player, onSelect, onClose, onCancel
             )}
             {cards.map(card => {
                 let canAfford = true;
+                let conditionFailed = false;
+                let conditionMsg = "";
+
                 // In readOnly mode, we don't care about affordability for selection purposes, but visual feedback is still nice
                 if (!readOnly) {
                     Object.entries(card.cost).forEach(([k, v]) => {
                         // @ts-ignore
                         if (player.res[k] < v) canAfford = false;
                     });
+                    
+                    if (card.condition) {
+                        if (card.condition.minOccupations) {
+                             const playedOccs = player.playedCards.filter(c => c.type === 'occupation').length;
+                             if (playedOccs < card.condition.minOccupations) {
+                                 conditionFailed = true;
+                                 conditionMsg = `Needs ${card.condition.minOccupations} Occs`;
+                             }
+                        }
+                        if (card.condition.fullFarm) {
+                             const emptyTiles = player.farm.filter(t => t === 0).length;
+                             if (emptyTiles > 0) {
+                                 conditionFailed = true;
+                                 conditionMsg = "Full Farm Req";
+                             }
+                        }
+                    }
                 }
+                
+                const disabled = !readOnly && (!canAfford || conditionFailed);
 
                 return (
                     <div 
                         key={card.id} 
-                        onClick={() => (!readOnly && canAfford && onSelect) && onSelect(card.id)}
+                        onClick={() => (!disabled && onSelect) && onSelect(card.id)}
                         className={`
                             relative rounded-lg overflow-hidden border-2 transition-all duration-200 p-3 flex flex-col
-                            ${!readOnly && canAfford 
+                            ${!disabled
                                 ? 'cursor-pointer hover:border-green-500 hover:scale-105 bg-stone-800' 
                                 : 'bg-stone-900 border-stone-800'}
-                            ${!readOnly && !canAfford ? 'opacity-50 grayscale cursor-not-allowed' : ''}
+                            ${disabled ? 'opacity-50 grayscale cursor-not-allowed' : ''}
                             ${card.type === 'occupation' ? 'border-yellow-600/60' : 'border-orange-600/60'}
                         `}
                     >
@@ -73,6 +94,12 @@ const HandModal: React.FC<Props> = ({ cards, player, onSelect, onClose, onCancel
                         {!readOnly && !canAfford && (
                             <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                                 <span className="text-red-400 font-bold text-xs uppercase border border-red-400 px-2 py-1 rotate-12">Too Expensive</span>
+                            </div>
+                        )}
+                        
+                        {!readOnly && conditionFailed && (
+                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                <span className="text-orange-400 font-bold text-xs uppercase border border-orange-400 px-2 py-1 rotate-12">{conditionMsg}</span>
                             </div>
                         )}
                     </div>
