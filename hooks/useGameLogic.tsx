@@ -382,10 +382,16 @@ export const useGameLogic = () => {
                     }
                 }
 
-                if (act.id === 'act_labor' && newP.playedCards.some(c => c.id === 'o_gengzhongbangshou')) {
-                    newP.tempMode = { mode: 'choice_plow_helper', actId: act.id };
-                    shouldPauseForConfirmation = true; 
-                    addLog(`${p.name} can choose to plow a field (Plow Helper)`, p.color);
+                if (act.id === 'act_labor') {
+                    if (newP.playedCards.some(c => c.id === 'o_gengzhongbangshou')) {
+                        newP.tempMode = { mode: 'choice_plow_helper', actId: act.id };
+                        shouldPauseForConfirmation = true; 
+                        addLog(`${p.name} can choose to plow a field (Plow Helper)`, p.color);
+                    }
+                    if (newP.playedCards.some(c => c.id === 'o_diannong') && p.type === 'human') {
+                         newP.tempMode = { mode: 'choice_tenant', actId: act.id };
+                         shouldPauseForConfirmation = true;
+                    }
                 }
 
                 needsResetAccumulation = true;
@@ -410,13 +416,8 @@ export const useGameLogic = () => {
                 }
                 addLog(`${p.name} took Resource Market`, p.color);
             }
-        } else if (act.id === 'act_labor') {
-            const tenant = newP.playedCards.find(c => c.id === 'o_diannong');
-            if (tenant && p.type === 'human') {
-                 newP.tempMode = { mode: 'choice_tenant', actId: act.id };
-                 shouldPauseForConfirmation = true;
-            }
-        }
+        } 
+        // act_labor check removed from here, moved into type==='res' block
 
         // SLIDE PLOW (minor_huashili)
         if ((act.id === 'act_plow' || act.mode === 'plow_sow') && p.type === 'human') {
@@ -1287,21 +1288,11 @@ export const useGameLogic = () => {
         }
         else if (p.tempMode.mode === 'choice_tenant') {
              if (choice === 'build') {
-                finalP.res.wood += 1; finalP.res.clay += 1;
                 updatePlayer(pIdx, () => ({ ...finalP, tempMode: { mode: 'tenant_build_room', actId: actId } }));
                 return; 
              } else if (choice === 'renovate') {
-                 finalP.res.wood += 1; finalP.res.clay += 1;
-                 const rooms = finalP.farm.filter(x => x === 1).length;
-                 const target = finalP.houseType === 'wood' ? 'clay' : 'stone';
-                 const resType = finalP.houseType === 'wood' ? 'clay' : 'stone';
-                 // @ts-ignore
-                 if (finalP.res[resType] >= rooms && finalP.res.reed >= 1) {
-                     // @ts-ignore
-                     finalP.res[resType] -= rooms; finalP.res.reed -= 1; finalP.houseType = target; finalP.res.food += 2;
-                 }
-             } else {
-                 finalP.res.food += 2;
+                 updatePlayer(pIdx, () => ({ ...finalP, tempMode: { mode: 'tenant_renovate', actId: actId } }));
+                 return;
              }
         }
         else if (p.tempMode.mode === 'choice_plow_helper') {
@@ -1740,7 +1731,9 @@ export const useGameLogic = () => {
                          updatePlayer(pId, pp => ({
                              ...pp,
                              res: { ...pp.res, wood: pp.res.wood - wCost, clay: pp.res.clay - cCost, stone: pp.res.stone - sCost, reed: pp.res.reed - rCost },
-                             farm: pp.farm.map((t, i) => i === tileIdx ? 1 : t)
+                             farm: pp.farm.map((t, i) => i === tileIdx ? 1 : t),
+                             // If tenant, switch to confirmation immediately as only 1 room is allowed
+                             tempMode: mode === 'tenant_build_room' ? { mode: 'turn_confirmation', actId: pp.tempMode!.actId } : pp.tempMode
                          }));
                          playSound('build');
                      } else { addLog("Not enough resources", "red"); playSound('error'); }
@@ -1815,7 +1808,8 @@ export const useGameLogic = () => {
                     // @ts-ignore
                     res: { ...p.res, [costRes]: p.res[costRes] - costAmt, reed: p.res.reed - reedCost },
                     stablesCount: newStables,
-                    farm: newFarm
+                    farm: newFarm,
+                    tempMode: p.tempMode?.mode === 'tenant_renovate' ? { mode: 'turn_confirmation', actId: p.tempMode.actId } : p.tempMode
                 };
             } else {
                 addLog(`Need ${costAmt} ${costRes} and ${reedCost} reed`, 'red');

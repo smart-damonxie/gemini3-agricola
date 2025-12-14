@@ -149,7 +149,7 @@ export const DB_MINORS: Card[] = [
     { id: 'minor_jiashiqian', name: '夹石钳', type: 'minor', cost: { wood: 1 }, score: 0, desc: '拿石头积累格时+1石头' },
     { id: 'minor_jumuchang', name: '锯木厂', type: 'minor', cost: { stone: 2 }, condition: { maxOccupations: 3 }, score: 2, desc: '发展卡木头花费-1. 条件:<=3职业' },
     { id: 'minor_lunken', name: '轮垦', type: 'minor', cost: { food: 2 }, score: 0, desc: '立即犁1田. 使用后传给下家手牌' },
-    { id: 'minor_miniquandi', name: '迷你圈地', type: 'minor', cost: { food: 2 }, score: 0, desc: '立即免费围1格(需相邻)圈地. 使用后传给下家手牌' },
+    { id: 'minor_miniquandi', name: '迷你圈地', type: 'minor', cost: { food: 2 }, score: 0, desc: '立即免费围1格(需相邻). 使用后传给下家手牌' },
     { id: 'minor_mujiangdian', name: '木匠店', type: 'minor', cost: { wood: 1, stone: 1 }, score: 0, desc: '建木屋花费改为2木2苇' },
     { id: 'minor_muyangzhang', name: '牧羊杖', type: 'minor', cost: { wood: 1 }, score: 0, desc: '围出>=4格圈地时, 立即+2羊' },
     { id: 'minor_niantuluji', name: '粘土路基', type: 'minor', cost: { food: 1 }, score: 0, desc: '每2砖补给->+1砖. 使用后传给下家手牌' },

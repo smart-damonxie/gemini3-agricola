@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { useGameLogic } from './hooks/useGameLogic';
 import { BASE_ACTIONS, MAX_ROUNDS } from './constants';
@@ -451,7 +452,7 @@ const App: React.FC = () => {
                                 
                                 {activePlayer.tempMode.mode === 'tenant_build_room' && (
                                     <div className="text-[10px] text-blue-200 bg-blue-900/40 px-2 py-0.5 rounded border border-blue-600">
-                                        Select an empty space adjacent to a room. Cost: 5 Wood, 2 Reed. (Max 1)
+                                        Select an empty space adjacent to a room. (Cost depends on house type)
                                     </div>
                                 )}
                                 
@@ -631,7 +632,7 @@ const App: React.FC = () => {
                                 )}
 
                                 {/* RENO */}
-                                {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence') && activePlayer.houseType !== 'stone' && (
+                                {(activePlayer.tempMode.mode === 'reno_major' || activePlayer.tempMode.mode === 'reno_fence' || activePlayer.tempMode.mode === 'tenant_renovate') && activePlayer.houseType !== 'stone' && (
                                     <button 
                                         onClick={renovate}
                                         className="px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-full font-bold shadow text-[10px] leading-none"
@@ -971,7 +972,7 @@ const App: React.FC = () => {
                            <div className="flex flex-col gap-3 w-full">
                                <button onClick={() => resolveCardChoice('build')} className="px-6 py-3 bg-blue-700 hover:bg-blue-600 text-white rounded font-bold uppercase shadow-lg border border-blue-500 flex justify-between items-center">
                                    <span>Build 1 Room</span>
-                                   <span className="text-xs bg-black/30 px-2 py-0.5 rounded">5 Wood, 2 Reed</span>
+                                   <span className="text-xs bg-black/30 px-2 py-0.5 rounded">Std Cost</span>
                                </button>
                                <button onClick={() => resolveCardChoice('renovate')} className="px-6 py-3 bg-purple-700 hover:bg-purple-600 text-white rounded font-bold uppercase shadow-lg border border-purple-500 flex justify-between items-center">
                                    <span>Renovate</span>
